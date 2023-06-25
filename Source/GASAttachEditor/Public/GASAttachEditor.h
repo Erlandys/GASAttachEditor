@@ -1,11 +1,10 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 #include "Framework/Docking/TabManager.h"
-
 
 class FToolBarBuilder;
 class FMenuBuilder;
@@ -19,28 +18,18 @@ public:
 	/** IModuleInterface implementation */
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
-	
-	/** This function will be bound to Command (by default it will bring up plugin window) */
-	void PluginButtonClicked();
-	
-private:
-
-	void RegisterMenus();
-
-	TSharedRef<class SDockTab> OnSpawnPluginTab(const class FSpawnTabArgs& SpawnTabArgs);
-
-	TSharedPtr<SWidget> CreateGASCheckTool();
 
 private:
-	TSharedPtr<class FUICommandList> PluginCommands;
+	TSharedRef<SDockTab> OnSpawnGASEditorTab(const FSpawnTabArgs& SpawnTabArgs);
 
-	TWeakPtr<SDockTab> GameplayCheckEditorTab;
+#if WITH_EDITOR
+	TSharedRef<SDockTab> OnSpawnGASTriggersTab(const FSpawnTabArgs& SpawnTabArgs);
+#endif
 
-	// <所有Tab控件管理
-	// Manage all tab controls
+private:
+	TSharedPtr<FUICommandList> PluginCommands;
+	TWeakPtr<SDockTab> GASEditorTab;
+	TWeakPtr<SDockTab> GASTriggersTab;
 	TSharedPtr<FTabManager> GASEditorTabManager;
-
-	// <所有Tab层级管理
-	// All tab level management
 	TSharedPtr<FTabManager::FLayout> GASEditorTabLayout;
 };

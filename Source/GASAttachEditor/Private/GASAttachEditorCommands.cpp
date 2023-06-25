@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "GASAttachEditorCommands.h"
 
@@ -6,9 +6,9 @@
 
 void FGASAttachEditorCommands::RegisterCommands()
 {
-	UI_COMMAND(ShowGASAttachEditorViewer, /*"查看角色携带GA"*/"View GA Carried By Role", "Bring up GASAttachEditor window", EUserInterfaceActionType::Check, FInputChord());
+	UI_COMMAND(ShowGASAttachEditorViewer, "Ability System Debug", "Bring up Ability System Debug window", EUserInterfaceActionType::Check, FInputChord());
 #if WITH_EDITOR
-	UI_COMMAND(ShowGASTagLookAssetViewer, /*"查看可Tag调用的GA"*/"View The GA That Can Be Called By Tag", "Bring up GASTagLookAsset window", EUserInterfaceActionType::Check, FInputChord());
+	UI_COMMAND(ShowGASTagLookAssetViewer, "Ability Triggers", "Bring up Ability Triggers window", EUserInterfaceActionType::Check, FInputChord());
 #endif
 }
 
