@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "Widgets/Views/STreeView.h"
 #include "Widgets/SCompoundWidget.h"
 
 class FGASAbilityNode;

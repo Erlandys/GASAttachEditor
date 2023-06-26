@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTask.h"
 #include "GameplayAbilitySpec.h"
 #include "Widgets/SGASAbilitiesTab.h"
 
