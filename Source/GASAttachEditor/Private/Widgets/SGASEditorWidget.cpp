@@ -5,9 +5,10 @@
 #include "AbilitySystemComponent.h"
 #include "SGASAbilitiesTab.h"
 #include "SGASAttributesTab.h"
-#include "SGASGameplayEffectsTab.h"
 #include "SGASGameplayTagsTab.h"
+#include "SGASGameplayEffectsTab.h"
 
+#include "GameFramework/PlayerState.h"
 #include "Widgets/Input/SComboButton.h"
 
 #define LOCTEXT_NAMESPACE "SGASEditor"
@@ -297,6 +298,24 @@ void SGASEditorWidget::ValidateSelections()
 {
 	if (SelectedWorldContextHandle.IsNone())
 	{
+		const TIndirectArray<FWorldContext>& Worlds = GEngine->GetWorldContexts();
+		FName ValidWorld;
+		for (const FWorldContext& WorldContext : Worlds)
+		{
+			if (WorldContext.WorldType != EWorldType::PIE &&
+				WorldContext.WorldType != EWorldType::Game)
+			{
+				continue;
+			}
+
+			ValidWorld = WorldContext.ContextHandle;
+			break;
+		}
+
+		if (!ValidWorld.IsNone())
+		{
+			OnChangeWorldType(ValidWorld);
+		}
 		return;
 	}
 
@@ -308,6 +327,42 @@ void SGASEditorWidget::ValidateSelections()
 			if (!SelectedComponent.IsValid() ||
 				!AbilitySystemComponents.Contains(SelectedComponent))
 			{
+				for (const TWeakObjectPtr<UAbilitySystemComponent>& WeakComponent : AbilitySystemComponents)
+				{
+					UAbilitySystemComponent* Component = WeakComponent.Get();
+					if (!Component)
+					{
+						continue;
+					}
+
+					if (const APawn* Character = Cast<APawn>(Component->GetOwnerActor()))
+					{
+						if (Character->IsLocallyControlled())
+						{
+							OnChangeSelectedActor(Component);
+							return;
+						}
+					}
+
+					if (const APlayerController* Controller = Cast<APlayerController>(Component->GetOwnerActor()))
+					{
+						if (Controller->IsLocalController())
+						{
+							OnChangeSelectedActor(Component);
+							return;
+						}
+					}
+
+					if (const APlayerState* PlayerState = Cast<APlayerState>(Component->GetOwnerActor()))
+					{
+						if (PlayerState->GetPlayerController() &&
+							PlayerState->GetPlayerController()->IsLocalController())
+						{
+							OnChangeSelectedActor(Component);
+							return;
+						}
+					}
+				}
 				OnChangeSelectedActor({});
 			}
 			return;
@@ -417,6 +472,42 @@ void SGASEditorWidget::OnChangeWorldType(const FName WorldContextHandle)
 	const UAbilitySystemComponent* CurrentComponent = SelectedComponent.Get();
 	if (!CurrentComponent)
 	{
+		for (const TWeakObjectPtr<UAbilitySystemComponent>& WeakComponent : AbilitySystemComponents)
+		{
+			UAbilitySystemComponent* Component = WeakComponent.Get();
+			if (!Component)
+			{
+				continue;
+			}
+
+			if (const APawn* Character = Cast<APawn>(Component->GetOwnerActor()))
+			{
+				if (Character->IsLocallyControlled())
+				{
+					OnChangeSelectedActor(Component);
+					return;
+				}
+			}
+
+			if (const APlayerController* Controller = Cast<APlayerController>(Component->GetOwnerActor()))
+			{
+				if (Controller->IsLocalController())
+				{
+					OnChangeSelectedActor(Component);
+					return;
+				}
+			}
+
+			if (const APlayerState* PlayerState = Cast<APlayerState>(Component->GetOwnerActor()))
+			{
+				if (PlayerState->GetPlayerController() &&
+					PlayerState->GetPlayerController()->IsLocalController())
+				{
+					OnChangeSelectedActor(Component);
+					return;
+				}
+			}
+		}
 		OnChangeSelectedActor({});
 		return;
 	}
