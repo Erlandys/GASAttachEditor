@@ -92,7 +92,7 @@ FText FGASGameplayEffectNode::GatherStack() const
 		return {};
 	}
 
-	if (GameplayEffect->Spec.StackCount <= 1)
+	if (GameplayEffect->Spec.GetStackCount() <= 1)
 	{
 		return {};
 	}
@@ -103,12 +103,12 @@ FText FGASGameplayEffectNode::GatherStack() const
 		{
 			if (const AActor* Avatar = Component->GetAvatarActor())
 			{
-				return FText::Format(LOCTEXT("GameplayEffectStacksFrom", "Stacks: {0}, From: {1}"), GameplayEffect->Spec.StackCount, FText::FromString(Avatar->GetName()));
+				return FText::Format(LOCTEXT("GameplayEffectStacksFrom", "Stacks: {0}, From: {1}"), GameplayEffect->Spec.GetStackCount(), FText::FromString(Avatar->GetName()));
 			}
 		}
 	}
 
-	return FText::Format(LOCTEXT("GameplayEffectStacks", "Stacks: {0}"), GameplayEffect->Spec.StackCount);
+	return FText::Format(LOCTEXT("GameplayEffectStacks", "Stacks: {0}"), GameplayEffect->Spec.GetStackCount());
 }
 
 FText FGASGameplayEffectNode::GatherLevel() const
