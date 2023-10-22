@@ -151,11 +151,11 @@ TSharedRef<SCheckBox> SGASAbilitiesTab::CreateStateSettingsCheckBox(const EAbili
 	return
 		SNew(SCheckBox)
 		.Padding(FMargin(4.f, 0.f))
-		.IsChecked_Lambda([=]
+		.IsChecked_Lambda([this, StateType]
 		{
 			return (VisibleStateTypes & StateType) == StateType ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 		})
-		.OnCheckStateChanged_Lambda([=](const ECheckBoxState NewValue)
+		.OnCheckStateChanged_Lambda([this, StateType](const ECheckBoxState NewValue)
 		{
 			switch (NewValue)
 			{
