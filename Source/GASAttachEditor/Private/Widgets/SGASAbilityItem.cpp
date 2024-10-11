@@ -255,14 +255,21 @@ FString FGASAbilityNode::GetWidgetAssetData() const
 		return {};
 	}
 
-	UGameplayAbility* Ability = AbilitySpecPtr.Ability;
+	const UGameplayAbility* Ability = AbilitySpecPtr.Ability;
 	if (!Ability ||
 		Ability->GetClass()->IsNative())
 	{
 		return {};
 	}
 
-	return FSoftObjectPath(Ability).ToString();
+	const FSoftObjectPath ObjectPath(Ability);
+
+	// Fixup path name, to open proper asset, instead of CDO asset
+	FString PathName = ObjectPath.GetAssetName();
+	PathName.RemoveFromStart("Default__");
+	PathName.RemoveFromEnd("_C");
+
+	return ObjectPath.GetLongPackageName() + "." + PathName;
 }
 
 const TArray<TSharedPtr<FGASAbilityNode>>& FGASAbilityNode::GetChildNodes() const
