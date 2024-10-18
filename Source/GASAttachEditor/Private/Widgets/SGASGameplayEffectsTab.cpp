@@ -22,7 +22,6 @@ void SGASGameplayEffectsTab::Construct(const FArguments& InArgs)
 		.Padding(0.f)
 		[
 			SAssignNew(GameplayEffectsTree, SGameplayEffectsTree)
-			.ItemHeight(24.f)
 			.TreeItemsSource(&GameplayEffectsList)
 			.OnGenerateRow_Lambda([](TSharedPtr<FGASGameplayEffectNodeBase> Item, const TSharedRef<STableViewBase>& OwnerTable)
 			{

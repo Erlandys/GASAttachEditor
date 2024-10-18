@@ -20,7 +20,6 @@ void SGASAttributesTab::Construct(const FArguments& InArgs)
 		.Padding(0.f)
 		[
 			SAssignNew(AttributesTree, SAttributesTree)
-			.ItemHeight(32.f)
 			.TreeItemsSource(&AttributesList)
 			.OnGenerateRow_Lambda([this](TSharedPtr<FGASAttributeNode> Item, const TSharedRef<STableViewBase>& OwnerTable)
 			{

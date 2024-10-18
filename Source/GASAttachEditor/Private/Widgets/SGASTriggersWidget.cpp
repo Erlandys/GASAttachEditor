@@ -58,7 +58,6 @@ void SGASTriggersWidget::Construct(const FArguments& InArgs)
 			.Padding(0.f)
 			[
 				SAssignNew(TriggerAssetsTree, STriggerAssetsTree)
-				.ItemHeight(32.f)
 				.TreeItemsSource(&TriggerAssetsTreeList)
 				.OnGenerateRow_Lambda([](TSharedPtr<FGASTriggerAssetItem> Item, const TSharedRef<STableViewBase>& OwnerTable)
 				{

@@ -43,7 +43,6 @@ void SGASAbilitiesTab::Construct(const FArguments& InArgs)
 			.Padding(0.f)
 			[
 				SAssignNew(AbilitiesTree, SAbilitiesTree)
-				.ItemHeight(24.f)
 				.TreeItemsSource(&AbilitiesList)
 				.OnGenerateRow_Lambda([this](TSharedPtr<FGASAbilityNode> Item, const TSharedRef<STableViewBase>& OwnerTable)
 				{

@@ -94,7 +94,11 @@ FText FGASAbilityNode::FetchState(EAbilityStateType::Type &OutStateType) const
 		return LOCTEXT("InputBlocked", "Input Blocked");
 	}
 
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
+	if (WeakComponent->AreAbilityTagsBlocked(AbilitySpecPtr.Ability->GetAssetTags()))
+#else
 	if (WeakComponent->AreAbilityTagsBlocked(AbilitySpecPtr.Ability->AbilityTags))
+#endif
 	{
 		FGameplayTagContainer BlockedAbility;
 		WeakComponent->GetBlockedAbilityTags(BlockedAbility);
