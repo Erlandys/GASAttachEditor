@@ -10,7 +10,7 @@ class FGASAttributeNode : public TSharedFromThis<FGASAttributeNode>
 public:
 	explicit FGASAttributeNode(const TWeakObjectPtr<UAbilitySystemComponent>& ASComponent,const FGameplayAttribute& Attribute);
 
-	void Update();
+	void Update(UAbilitySystemComponent* NewComponent);
 
 public:
 	FORCEINLINE FText GetCollectionName() const { return CollectionName; }

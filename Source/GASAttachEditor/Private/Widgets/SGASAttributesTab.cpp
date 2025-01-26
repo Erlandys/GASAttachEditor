@@ -133,14 +133,14 @@ void SGASAttributesTab::Refresh(UAbilitySystemComponent* Component)
 				UnusedAttributes.Remove(Key);
 				if (const TSharedPtr<FGASAttributeNode>& AttributeNode = MappedAttributes.FindRef(Key))
 				{
-					AttributeNode->Update();
+					AttributeNode->Update(Component);
 					continue;
 				}
 
 				FGameplayAttribute Attribute(Property);
 
 				TSharedRef<FGASAttributeNode> NewItem = MakeShared<FGASAttributeNode>(Component, Attribute);
-				NewItem->Update();
+				NewItem->Update(Component);
 
 				MappedAttributes.Add(Key, NewItem);
 			}

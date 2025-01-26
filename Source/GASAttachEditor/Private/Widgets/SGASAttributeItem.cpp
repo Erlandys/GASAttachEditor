@@ -9,11 +9,11 @@ FGASAttributeNode::FGASAttributeNode(const TWeakObjectPtr<UAbilitySystemComponen
 	: WeakComponent(ASComponent)
 	, Attribute(Attribute)
 {
-	Update();
 }
 
-void FGASAttributeNode::Update()
+void FGASAttributeNode::Update(UAbilitySystemComponent* NewComponent)
 {
+	WeakComponent = NewComponent;
 	CollectionName = GatherCollectionName();
 	Name = GatherName();
 	ValueText = GatherValue(Value);
