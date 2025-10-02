@@ -183,7 +183,11 @@ void SGASEditorWidget::CreateTabManager(const TSharedPtr<SDockTab>& ParentTab)
 	TabManager->SetOnPersistLayout(FTabManager::FOnPersistLayout::CreateLambda([](const TSharedRef<FTabManager::FLayout>& LayoutToSave)
 	{
 #if WITH_EDITOR
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7
+		if (FGlobalTabmanager::Get()->CanSavePersistentLayouts())
+#else
 		if (FUnrealEdMisc::Get().IsSavingLayoutOnClosedAllowed())
+#endif
 		{
 			FLayoutSaveRestore::SaveToConfig(GEditorLayoutIni, LayoutToSave);
 		}

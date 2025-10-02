@@ -97,7 +97,10 @@ FText FGASGameplayEffectNode::GatherStack() const
 		return {};
 	}
 
+	ensure(FEngineVersion::Current().GetChangelist() <= 45973471);
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	if (GameplayEffect->Spec.Def->StackingType == EGameplayEffectStackingType::AggregateBySource)
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	{
 		if (const UAbilitySystemComponent* Component = GameplayEffect->Spec.GetContext().GetInstigatorAbilitySystemComponent())
 		{
