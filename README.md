@@ -14,9 +14,10 @@ Editor Window with similar (and additional) functionality to UE command-line `Sh
 ### Usage
 - Open **Tools ▸ Debug ▸ Ability System Viewer**, or run `GASAttachEditor.Show` on the command-line in non-shipping mode.
 
-See [PLUGIN.md](PLUGIN.md) for full documentation.
-![Screenshot from 2021-06-03 10:41:05](https://user-images.githubusercontent.com/33085556/120578385-4cd31480-c458-11eb-985c-9e2523c9c618.png)
-
+<img width="929" height="456" alt="Abilities" src="https://github.com/user-attachments/assets/504933da-8ece-4cb6-8036-114fcf5cf410" />
+<img width="919" height="309" alt="Attributes" src="https://github.com/user-attachments/assets/377d6e30-c661-401f-a37c-e989dea4a518" />
+<img width="921" height="328" alt="GameplayEffects" src="https://github.com/user-attachments/assets/bcdf89fd-2cb1-45ca-bf14-9a04fe42f41a" />
+<img width="925" height="364" alt="GameplayTags" src="https://github.com/user-attachments/assets/ec740be8-d0f3-4287-98d2-482b7123045c" />
 
 To see UE's existing debug information:
 -  Run `ShowDebug AbilitySystem` on the command-line.
