@@ -1,9 +1,12 @@
-﻿#include "SGASGameplayTagsItem.h"
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "SGASGameplayTagsItem.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayTagsManager.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "Widgets/Input/SButton.h"
 
-#define LOCTEXT_NAMESPACE "SGASAttachEditor"
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
 
 FGASTagNode::FGASTagNode(const TWeakObjectPtr<UAbilitySystemComponent>& WeakComponent, const FGameplayTag& Tag, FName PropertyName)
 	: WeakComponent(WeakComponent)
@@ -41,7 +44,8 @@ FText FGASTagNode::GatherToolTip() const
 		return LOCTEXT("None", "None");
 	}
 
-	FString Base = GatherName().ToString();
+	TArray<FText> ToolTipSections;
+	FText Header = GatherName();
 
 #if WITH_EDITOR
 	FString Comment;
@@ -51,23 +55,20 @@ FText FGASTagNode::GatherToolTip() const
 	bool bAllowNonRestrictedChildren = false;
 	if (UGameplayTagsManager::Get().GetTagEditorData(*Tag.ToString(), Comment, TagSource, bIsTagExplicit, bIsRestrictedTag, bAllowNonRestrictedChildren))
 	{
-		if (bIsTagExplicit)
-		{
-			Base += " (" + TagSource.ToString() + ")";
-		}
-		else
-		{
-			Base += " Implicit";
-		}
+		Header = bIsTagExplicit
+			? FText::Format(LOCTEXT("TagSourceFormat", "{0} ({1})"), Header, FText::FromName(TagSource))
+			: FText::Format(LOCTEXT("TagImplicitFormat", "{0} Implicit"), Header);
 
 		if (!Comment.IsEmpty())
 		{
-			Base += "\n\n" + Comment;
+			ToolTipSections.Add(FText::FromString(Comment));
 		}
 	}
 #endif
 
-	FString TagAbilities;
+	ToolTipSections.Insert(Header, 0);
+
+	TArray<FText> TagAbilityNames;
 	for (const FGameplayAbilitySpec& AbilitySpec : Component->GetActivatableAbilities())
 	{
 		if (!AbilitySpec.IsActive() ||
@@ -76,14 +77,24 @@ FText FGASTagNode::GatherToolTip() const
 			continue;
 		}
 
-		const FStructProperty* Property = FindFProperty<FStructProperty>(AbilitySpec.Ability->GetClass(), PropertyName);
+		UGameplayAbility* Ability = AbilitySpec.Ability;
+		for (UGameplayAbility* InstancedAbility : AbilitySpec.GetAbilityInstances())
+		{
+			if (InstancedAbility)
+			{
+				Ability = InstancedAbility;
+				break;
+			}
+		}
+
+		const FStructProperty* Property = FindFProperty<FStructProperty>(Ability->GetClass(), PropertyName);
 		if (!Property ||
 			Property->Struct != FGameplayTagContainer::StaticStruct())
 		{
 			continue;
 		}
 
-		const FGameplayTagContainer* ActivationTags = Property->ContainerPtrToValuePtr<FGameplayTagContainer>(AbilitySpec.Ability);
+		const FGameplayTagContainer* ActivationTags = Property->ContainerPtrToValuePtr<FGameplayTagContainer>(Ability);
 		if (!ActivationTags)
 		{
 			continue;
@@ -91,17 +102,16 @@ FText FGASTagNode::GatherToolTip() const
 
 		if (ActivationTags->HasTag(Tag))
 		{
-			TagAbilities += Component->CleanupName(GetNameSafe(AbilitySpec.Ability)) + ", ";
+			TagAbilityNames.Add(FText::FromString(Component->CleanupName(GetNameSafe(Ability))));
 		}
 	}
 
-	if (!TagAbilities.IsEmpty())
+	if (TagAbilityNames.Num() > 0)
 	{
-		TagAbilities.RemoveFromEnd(", ");
-		Base += "\n\n" + TagAbilities;
+		ToolTipSections.Add(FText::Join(LOCTEXT("TagAbilitySeparator", ", "), TagAbilityNames));
 	}
 
-	return FText::FromString(Base);
+	return FText::Join(FText::FromString(TEXT("\n\n")), ToolTipSections);
 }
 
 FString FGASTagNode::GatherTagName() const
@@ -112,16 +122,6 @@ FString FGASTagNode::GatherTagName() const
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-void SGASTagView::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
-{
-	if (FSlateApplication::Get().IsDragDropping())
-	{
-		return;
-	}
-
-	STileView<TSharedPtr<FGASTagNode>>::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////

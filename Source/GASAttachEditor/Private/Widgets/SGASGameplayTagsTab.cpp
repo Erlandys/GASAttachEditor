@@ -4,9 +4,10 @@
 
 #include "SGASGameplayTagsItem.h"
 #include "AbilitySystemComponent.h"
+#include "GASAttachEditorAbilityAccessors.h"
 #include "Widgets/Layout/SWrapBox.h"
 
-#define LOCTEXT_NAMESPACE "SGASEditor"
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
 
 void SGASGameplayTagsTab::Construct(const FArguments& InArgs)
 {
@@ -85,13 +86,8 @@ void SGASGameplayTagsTab::Construct(const FArguments& InArgs)
 
 void SGASGameplayTagsTab::Refresh(UAbilitySystemComponent* Component)
 {
-	class UDummyAbility : UGameplayAbility
-	{
-		friend class SGASGameplayTagsTab;
-	};
-
-	static FName OwnedTagsProperty = GET_MEMBER_NAME_CHECKED(UDummyAbility, ActivationOwnedTags);
-	static FName BlockedTagsProperty = GET_MEMBER_NAME_CHECKED(UDummyAbility, ActivationBlockedTags);
+	static const FName OwnedTagsProperty = FGASAbilityAccessors::GetActivationOwnedTagsPropertyName();
+	static const FName BlockedTagsProperty = FGASAbilityAccessors::GetActivationBlockedTagsPropertyName();
 
 	WeakComponent = Component;
 

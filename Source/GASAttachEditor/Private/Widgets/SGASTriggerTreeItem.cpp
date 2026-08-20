@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #if WITH_EDITOR
 
@@ -8,6 +8,7 @@
 
 #include "EditorFontGlyphs.h"
 #include "GameplayTagsManager.h"
+#include "Engine/Blueprint.h"
 #include "Widgets/Input/SHyperlink.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 
@@ -34,12 +35,17 @@ FText FGASTriggerAssetItem::GetTriggerSourceName() const
 
 bool FGASTriggerAssetItem::HasAssetData() const
 {
-	if (const UBlueprint* Blueprint = Cast<UBlueprint>(Asset.GetAsset()))
+	static const FTopLevelAssetPath BlueprintClassPath = UBlueprint::StaticClass()->GetClassPathName();
+	if (Asset.AssetClassPath == BlueprintClassPath)
 	{
 		return true;
 	}
 
-	return !Asset.GetClass()->IsNative();
+	const UClass* AssetClass = Asset.GetClass();
+
+	return
+		AssetClass &&
+		!AssetClass->IsNative();
 }
 
 FText FGASTriggerAssetItem::GetAssetName() const
@@ -49,7 +55,7 @@ FText FGASTriggerAssetItem::GetAssetName() const
 
 FString FGASTriggerAssetItem::GetWidgetAssetData() const
 {
-	return FSoftObjectPath(Asset.GetAsset()).ToString();
+	return Asset.GetSoftObjectPath().ToString();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -2,6 +2,11 @@
 [![zh-Hans](https://img.shields.io/badge/lang-zh-green.svg)](README.zh-Hans.md)
 
 # GAS Attach Editor - Unreal Engine Plugin
+
+> **注意 / Note:** 此分支的功能说明以英文版为准，本页面可能已过时。
+> This fork's documentation is maintained in English — see [README.md](README.md) and
+> [PLUGIN.md](PLUGIN.md). This page may be out of date.
+
 类似UE 命令行ShowDebug AbilitySystem的图形化编辑器功能，方便查看
 
 ### 与官方Debug信息对比
@@ -10,7 +15,7 @@
 - 支持激活/未激活的筛选
 - 便捷快速查找便于其他调试
 
-### 在非Shippng模式下使用在命令行里输入`GASAttachEditorShow`的命令
+### 在非Shippng模式下使用在命令行里输入`GASAttachEditor.Show`的命令
 
 截图：
 ![QQ截图20210603104105](https://user-images.githubusercontent.com/33085556/120578385-4cd31480-c458-11eb-985c-9e2523c9c618.png)

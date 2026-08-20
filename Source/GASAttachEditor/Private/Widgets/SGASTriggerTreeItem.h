@@ -1,12 +1,14 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #if WITH_EDITOR
 
 #include "CoreMinimal.h"
-#include "GameplayTagContainer.h"
 #include "Widgets/SCompoundWidget.h"
+#include "GameplayTagContainer.h"
+#include "AssetRegistry/AssetData.h"
+#include "Widgets/Views/STableRow.h"
 #include "Abilities/GameplayAbility.h"
 
 class FGASTriggerAssetItem : public TSharedFromThis<FGASTriggerAssetItem>

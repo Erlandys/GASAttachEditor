@@ -1,45 +1,46 @@
-﻿#include "SGASAttributeItem.h"
+// Fill out your copyright notice in the Description page of Project Settings.
 
+#include "SGASAttributeItem.h"
 #include "AbilitySystemComponent.h"
 #include "Widgets/SGASAttributesTab.h"
 
-#define LOCTEXT_NAMESPACE "SGASAttachEditor"
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
+
+FGASAttributeNode::FGASAttributeNode(const FName CollectionKey, const FText& CollectionName)
+	: Type(EGASAttributeNode::Collection)
+	, CollectionKey(CollectionKey)
+	, CollectionName(CollectionName)
+{
+}
 
 FGASAttributeNode::FGASAttributeNode(const TWeakObjectPtr<UAbilitySystemComponent>& ASComponent, const FGameplayAttribute& Attribute)
-	: WeakComponent(ASComponent)
+	: Type(EGASAttributeNode::Attribute)
+	, WeakComponent(ASComponent)
 	, Attribute(Attribute)
 {
+	RawName = Attribute.GetName();
+	Name = FText::FromString(FName::NameToDisplayString(RawName, false));
+
+	if (const UClass* AttributeSetClass = Attribute.GetAttributeSetClass())
+	{
+		CollectionName = FText::FromString(FName::NameToDisplayString(AttributeSetClass->GetName(), false));
+	}
+	else
+	{
+		CollectionName = LOCTEXT("None", "None");
+	}
 }
 
 void FGASAttributeNode::Update(UAbilitySystemComponent* NewComponent)
 {
+	if (Type == EGASAttributeNode::Collection)
+	{
+		return;
+	}
+
 	WeakComponent = NewComponent;
-	CollectionName = GatherCollectionName();
-	Name = GatherName();
 	ValueText = GatherValue(Value);
 	BaseValueText = GatherBaseValue(BaseValue);
-}
-
-FText FGASAttributeNode::GatherCollectionName() const
-{
-	const UAbilitySystemComponent* Component = WeakComponent.Get();
-	if (!Component)
-	{
-		return LOCTEXT("None", "None");
-	}
-
-	return FText::FromString(Attribute.GetAttributeSetClass()->GetName());
-}
-
-FText FGASAttributeNode::GatherName() const
-{
-	const UAbilitySystemComponent* Component = WeakComponent.Get();
-	if (!Component)
-	{
-		return LOCTEXT("None", "None");
-	}
-
-	return FText::FromString(Attribute.GetName());
 }
 
 FText FGASAttributeNode::GatherValue(float& OutValue) const
@@ -78,6 +79,7 @@ FText FGASAttributeNode::GatherBaseValue(float& OutValue) const
 void SGASAttributeItem::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView)
 {
 	WidgetInfo = InArgs._WidgetInfoToVisualize;
+	HighlightText = InArgs._HighlightText;
 	SetPadding(0.f);
 
 	check(WidgetInfo.IsValid());
@@ -87,6 +89,36 @@ void SGASAttributeItem::Construct(const FArguments& InArgs, const TSharedRef<STa
 
 TSharedRef<SWidget> SGASAttributeItem::GenerateWidgetForColumn(const FName& ColumnName)
 {
+	const bool bIsCollection = WidgetInfo->IsCollection();
+
+	if (SGASAttributesTab::AttributeNameColumn == ColumnName)
+	{
+		return
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SExpanderArrow, SharedThis(this))
+				.IndentAmount(16)
+				.ShouldDrawWires(true)
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.f)
+			.VAlign(VAlign_Center)
+			.Padding(2.f, 0.f)
+			[
+				SNew(STextBlock)
+				.Text(MakeAttributeSP(WidgetInfo.Get(), bIsCollection ? &FGASAttributeNode::GetCollectionName : &FGASAttributeNode::GetName))
+				.HighlightText(HighlightText)
+				.Justification(ETextJustify::Left)
+			];
+	}
+
+	if (bIsCollection)
+	{
+		return SNullWidget::NullWidget;
+	}
+
 	TSharedPtr<STextBlock> TextField;
 
 	TSharedRef<SBox> Result =
@@ -99,19 +131,7 @@ TSharedRef<SWidget> SGASAttributeItem::GenerateWidgetForColumn(const FName& Colu
 			.Justification(ETextJustify::Center)
 		];
 
-	if (SGASAttributesTab::AttributeCollectionColumn == ColumnName)
-	{
-		Result->SetHAlign(HAlign_Left);
-		TextField->SetJustification(ETextJustify::Left);
-		TextField->SetText(MakeAttributeSP(WidgetInfo.Get(), &FGASAttributeNode::GetCollectionName));
-	}
-	else if (SGASAttributesTab::AttributeNameColumn == ColumnName)
-	{
-		Result->SetHAlign(HAlign_Left);
-		TextField->SetJustification(ETextJustify::Left);
-		TextField->SetText(MakeAttributeSP(WidgetInfo.Get(), &FGASAttributeNode::GetName));
-	}
-	else if (SGASAttributesTab::AttributeValueColumn == ColumnName)
+	if (SGASAttributesTab::AttributeValueColumn == ColumnName)
 	{
 		TextField->SetText(MakeAttributeSP(WidgetInfo.Get(), &FGASAttributeNode::GetValueText));
 	}

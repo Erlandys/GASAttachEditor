@@ -1,9 +1,18 @@
-﻿#include "SGASGameplayEffectItem.h"
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
+#include "SGASGameplayEffectItem.h"
+#include "Styling/StyleColors.h"
 #include "AbilitySystemComponent.h"
+#include "Widgets/Input/SHyperlink.h"
 #include "Widgets/SGASGameplayEffectsTab.h"
 
-#define LOCTEXT_NAMESPACE "SGASAttachEditor"
+#if WITH_EDITOR
+#include "Editor.h"
+#include "Subsystems/AssetEditorSubsystem.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
 
 void FGASGameplayEffectNodeBase::Update()
 {
@@ -13,8 +22,26 @@ void FGASGameplayEffectNodeBase::Update()
 	LevelText = GatherLevel();
 	Prediction = GatherPrediction();
 	GrantedTagsText = GatherGrantedTags();
+	bIsBlocked = GatherBlocked();
+	StateText = GatherState();
+	StateType = GatherStateType();
+
+	// Resolve once - after that it must survive the effect, the component and PIE itself
+	if (!SourceAsset.IsValid())
+	{
+		SourceAsset = FGASSourceAsset::FromClass(GatherSourceAssetClass());
+	}
+
+	FixupColor();
 
 	CreateChildren();
+}
+
+void FGASGameplayEffectNodeBase::FixupColor()
+{
+	Tint = bIsBlocked
+		? FStyleColors::Error.GetSpecifiedColor()
+		: FSlateColor::UseForeground().GetColor(FWidgetStyle());
 }
 
 const TArray<TSharedPtr<FGASGameplayEffectNodeBase>>& FGASGameplayEffectNodeBase::GetChildNodes() const
@@ -60,7 +87,7 @@ FText FGASGameplayEffectNode::GatherDuration() const
 		return LOCTEXT("None", "None");
 	}
 
-	FText Result = LOCTEXT("GameplayEffectInfiniteDuration", "Inifinite Duration");
+	FText Result = LOCTEXT("GameplayEffectInfiniteDuration", "Infinite Duration");
 
 	FNumberFormattingOptions NumberFormatOptions;
 	NumberFormatOptions.MaximumFractionalDigits = 2;
@@ -146,7 +173,7 @@ FText FGASGameplayEffectNode::GatherPrediction() const
 		return LOCTEXT("GameplayEffectPredictionGenerated", "Predicted and Waiting");
 	}
 
-	return LOCTEXT("GameplayEffectPredictedCought", "Predicted and Cought Up");
+	return LOCTEXT("GameplayEffectPredictedCaughtUp", "Predicted and Caught Up");
 }
 
 FText FGASGameplayEffectNode::GatherGrantedTags() const
@@ -161,6 +188,66 @@ FText FGASGameplayEffectNode::GatherGrantedTags() const
 	GameplayEffect->Spec.GetAllGrantedTags(GrantedTags);
 
 	return FText::FromString(GrantedTags.ToStringSimple());
+}
+
+bool FGASGameplayEffectNode::GatherBlocked() const
+{
+	const FActiveGameplayEffect* GameplayEffect = GetGameplayEffect();
+	if (!GameplayEffect)
+	{
+		return false;
+	}
+
+	return GameplayEffect->bIsInhibited;
+}
+
+FText FGASGameplayEffectNode::GatherState() const
+{
+	const FActiveGameplayEffect* GameplayEffect = GetGameplayEffect();
+	if (!GameplayEffect)
+	{
+		return {};
+	}
+
+	if (GameplayEffect->bIsInhibited)
+	{
+		return LOCTEXT("GameplayEffectBlocked", "Blocked");
+	}
+
+	return LOCTEXT("GameplayEffectActive", "Active");
+}
+
+EGameplayEffectStateType::Type FGASGameplayEffectNode::GatherStateType() const
+{
+	const FActiveGameplayEffect* GameplayEffect = GetGameplayEffect();
+	if (!GameplayEffect)
+	{
+		return EGameplayEffectStateType::Active;
+	}
+
+	if (GameplayEffect->bIsInhibited)
+	{
+		return EGameplayEffectStateType::Inhibited;
+	}
+
+	if (GameplayEffect->GetDuration() <= 0.f)
+	{
+		return EGameplayEffectStateType::Infinite;
+	}
+
+	return EGameplayEffectStateType::Active;
+}
+
+const UClass* FGASGameplayEffectNode::GatherSourceAssetClass() const
+{
+	const FActiveGameplayEffect* GameplayEffect = GetGameplayEffect();
+	if (!GameplayEffect ||
+		!GameplayEffect->Spec.Def)
+	{
+		return nullptr;
+	}
+
+	return GameplayEffect->Spec.Def->GetClass();
 }
 
 void FGASGameplayEffectNode::CreateChildren()
@@ -345,6 +432,7 @@ const FGameplayModifierInfo* FGASGameplayEffectModifierNode::GetModifierInfo(con
 void SGASGameplayEffectTreeItem::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView)
 {
 	WidgetInfo = InArgs._WidgetInfoToVisualize;
+	HighlightText = InArgs._HighlightText;
 	SetPadding(0.f);
 
 	check(WidgetInfo.IsValid());
@@ -360,87 +448,146 @@ TSharedRef<SWidget> SGASGameplayEffectTreeItem::GenerateWidgetForColumn(const FN
 {
 	if (ColumnName == SGASGameplayEffectsTab::GameplayEffectNameColumn)
 	{
+		return CreateNameColumn();
+	}
+
+	if (ColumnName == SGASGameplayEffectsTab::GameplayEffectStateColumn)
+	{
 		return
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SExpanderArrow, SharedThis(this))
-				.IndentAmount(16)
-				.ShouldDrawWires(true)
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(2.f, 0.f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SBox)
-				.HAlign(HAlign_Left)
-				.VAlign(VAlign_Center)
-				.Padding(2.f, 0.f)
-				[
-					SNew(STextBlock)
-					.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetName))
-				]
-			];
+			CreateTextColumn(
+				MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetState),
+				HAlign_Left,
+				ETextJustify::Center);
 	}
 
 	if (ColumnName == SGASGameplayEffectsTab::GameplayEffectDurationColumn)
 	{
 		return
-			SNew(SBox)
-			.HAlign(HAlign_Left)
-			.VAlign(VAlign_Center)
-			.Padding(2.f, 0.f)
-			[
-				SNew(STextBlock)
-				.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetDurationText))
-			];
+			CreateTextColumn(
+				MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetDurationText),
+				HAlign_Left,
+				ETextJustify::Left);
 	}
 
 	if (ColumnName == SGASGameplayEffectsTab::GameplayEffectStackColumn)
 	{
 		return
-			SNew(SBox)
-			.HAlign(HAlign_Left)
-			.VAlign(VAlign_Center)
-			.Padding(2.f, 0.f)
-			[
-				SNew(STextBlock)
-				.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetStackText))
-			];
+			CreateTextColumn(
+				MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetStackText),
+				HAlign_Left,
+				ETextJustify::Left);
 	}
 
 	if (ColumnName == SGASGameplayEffectsTab::GameplayEffectLevelColumn)
 	{
 		return
-			SNew(SBox)
-			.HAlign(HAlign_Center)
-			.VAlign(VAlign_Center)
-			.Padding(2.f, 0.f)
-			[
-				SNew(STextBlock)
-				.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetLevelText))
-				.Justification(ETextJustify::Center)
-			];
+			CreateTextColumn(
+				MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetLevelText),
+				HAlign_Center,
+				ETextJustify::Center);
+	}
+
+	if (ColumnName == SGASGameplayEffectsTab::GameplayEffectPredictionColumn)
+	{
+		return
+			CreateTextColumn(
+				MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetPrediction),
+				HAlign_Center,
+				ETextJustify::Center);
 	}
 
 	if (ColumnName == SGASGameplayEffectsTab::GameplayEffectGrantedTagsColumn)
 	{
 		return
-			SNew(SBox)
-			.HAlign(HAlign_Left)
-			.VAlign(VAlign_Center)
-			.Padding(2.f, 0.f)
-			[
-				SNew(STextBlock)
-				.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetGrantedTags))
-				.ToolTipText(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetGrantedTags))
-			];
+			CreateTextColumn(
+				MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetGrantedTags),
+				HAlign_Left,
+				ETextJustify::Left,
+				true);
 	}
 
 	return SNullWidget::NullWidget;
 }
 
-#undef LOCTEXT_NAMESPACE
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
+TSharedRef<SWidget> SGASGameplayEffectTreeItem::CreateTextColumn(
+	const TAttribute<FText>& Text,
+	const EHorizontalAlignment HorizontalAlignment,
+	const ETextJustify::Type Justification,
+	const bool bShowToolTip) const
+{
+	return
+		SNew(SBorder)
+		.HAlign(HorizontalAlignment)
+		.VAlign(VAlign_Center)
+		.Padding(2.f, 0.f)
+		.Visibility(EVisibility::SelfHitTestInvisible)
+		.BorderBackgroundColor(FLinearColor::Transparent)
+		.ColorAndOpacity(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetColor))
+		[
+			SNew(STextBlock)
+			.Text(Text)
+			.HighlightText(HighlightText)
+			.ToolTipText(bShowToolTip ? Text : TAttribute<FText>())
+			.Justification(Justification)
+		];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+TSharedRef<SWidget> SGASGameplayEffectTreeItem::CreateNameColumn()
+{
+	TSharedPtr<SWidget> NameWidgetBlock;
+	if (WidgetInfo->CanNavigateToSource())
+	{
+		NameWidgetBlock =
+			SNew(SHyperlink)
+			.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetName))
+			.HighlightText(HighlightText)
+			.OnNavigate(this, &SGASGameplayEffectTreeItem::HandleHyperlinkNavigate);
+	}
+	else
+	{
+		NameWidgetBlock =
+			SNew(STextBlock)
+			.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetName))
+			.HighlightText(HighlightText);
+	}
+
+	return
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SExpanderArrow, SharedThis(this))
+			.IndentAmount(16)
+			.ShouldDrawWires(true)
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.f, 0.f)
+		.VAlign(VAlign_Center)
+		[
+			SNew(SBorder)
+			.HAlign(HAlign_Left)
+			.VAlign(VAlign_Center)
+			.Visibility(EVisibility::SelfHitTestInvisible)
+			.BorderBackgroundColor(FLinearColor::Transparent)
+			.ColorAndOpacity(MakeAttributeSP(WidgetInfo.Get(), &FGASGameplayEffectNodeBase::GetColor))
+			[
+				NameWidgetBlock ? NameWidgetBlock.ToSharedRef() : SNullWidget::NullWidget
+			]
+		];
+}
+
+void SGASGameplayEffectTreeItem::HandleHyperlinkNavigate() const
+{
+	WidgetInfo->NavigateToSource();
+}
+
+#undef LOCTEXT_NAMESPACE

@@ -1,15 +1,19 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #if WITH_EDITOR
 
 #include "SGASTriggersWidget.h"
 
 #include "SGASTriggerTreeItem.h"
+#include "GASAttachEditorAbilityAccessors.h"
+
+#include "Engine/Blueprint.h"
+#include "AssetRegistry/AssetData.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Abilities/GameplayAbility.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 
-#define LOCTEXT_NAMESPACE "FGASAttachEditorModule"
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
 
 const FName SGASTriggersWidget::TriggerTagColumn = "Trigger_Tag";
 const FName SGASTriggersWidget::TriggerAssetColumn = "Trigger_Asset";
@@ -35,14 +39,14 @@ void SGASTriggersWidget::Construct(const FArguments& InArgs)
 			.Padding(2.f)
 			[
 				SNew(STextBlock)
-				.Text(INVTEXT("Trigger Tags"))
+				.Text(LOCTEXT("TriggerTags", "Trigger Tags"))
 			]
 			+ SVerticalBox::Slot()
 			.FillHeight(1.f)
 			[
 				SNew(SBorder)
 				.Padding(2.f)
-				.OnMouseButtonUp(this, &SGASTriggersWidget::OnMoueButtonUp)
+				.OnMouseButtonUp(this, &SGASTriggersWidget::HandleTriggerTagsMouseButtonUp)
 				[
 					SAssignNew(TriggerTagsView, SWrapBox)
 					.Orientation(Orient_Horizontal)
@@ -57,19 +61,14 @@ void SGASTriggersWidget::Construct(const FArguments& InArgs)
 			SNew(SBorder)
 			.Padding(0.f)
 			[
-				SAssignNew(TriggerAssetsTree, STriggerAssetsTree)
-				.TreeItemsSource(&TriggerAssetsTreeList)
+				SAssignNew(TriggerAssetsList, STriggerAssetsList)
+				.ListItemsSource(&TriggerAssetsListItems)
 				.OnGenerateRow_Lambda([](TSharedPtr<FGASTriggerAssetItem> Item, const TSharedRef<STableViewBase>& OwnerTable)
 				{
 					return
 						SNew(SGASTriggerTreeItem, OwnerTable)
 						.Item(Item);
 				})
-				.OnGetChildren_Lambda([](TSharedPtr<FGASTriggerAssetItem> Item, TArray<TSharedPtr<FGASTriggerAssetItem>>& OutChildren)
-				{
-					
-				})
-				.HighlightParentNodesForSelection(true)
 				.HeaderRow
 				(
 					SNew(SHeaderRow)
@@ -90,7 +89,7 @@ void SGASTriggersWidget::Construct(const FArguments& InArgs)
 	];
 }
 
-FReply SGASTriggersWidget::OnMoueButtonUp(const FGeometry& Geometry, const FPointerEvent& PointerEvent)
+FReply SGASTriggersWidget::HandleTriggerTagsMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& PointerEvent)
 {
 	if (PointerEvent.GetEffectingButton() != EKeys::RightMouseButton)
 	{
@@ -175,12 +174,6 @@ void SGASTriggersWidget::OnTagDeleted(const FGameplayTag TriggerTag)
 
 void SGASTriggersWidget::UpdateAssetsList()
 {
-	// To properly check AbilityTriggers variable for changes
-	class UDummyAbility : public UGameplayAbility
-	{
-		friend class SGASTriggersWidget;
-	};
-
 	const IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 
 	TArray<FAssetDependency> Dependencies;
@@ -190,7 +183,7 @@ void SGASTriggersWidget::UpdateAssetsList()
 		AssetRegistry.GetReferencers(AssetId, Dependencies, UE::AssetRegistry::EDependencyCategory::SearchableName, UE::AssetRegistry::EDependencyQuery::NoRequirements);
 	}
 
-	TriggerAssetsTreeList.Empty();
+	TriggerAssetsListItems.Empty();
 
 	for (const FAssetDependency& Dependency : Dependencies)
 	{
@@ -200,13 +193,14 @@ void SGASTriggersWidget::UpdateAssetsList()
 		for (const FAssetData& Asset : Assets)
 		{
 			UObject* Object = Asset.GetAsset();
-			UGameplayAbility* Ability = Cast<UGameplayAbility>(Object);
+			const UGameplayAbility* Ability = Cast<UGameplayAbility>(Object);
 
 			if (!Ability)
 			{
 				if (const UBlueprint* Blueprint = Cast<UBlueprint>(Object))
 				{
-					if (Blueprint->GeneratedClass->IsChildOf<UGameplayAbility>())
+					if (Blueprint->GeneratedClass &&
+						Blueprint->GeneratedClass->IsChildOf<UGameplayAbility>())
 					{
 						Ability = Blueprint->GeneratedClass->GetDefaultObject<UGameplayAbility>();
 					}
@@ -218,14 +212,8 @@ void SGASTriggersWidget::UpdateAssetsList()
 				continue;
 			}
 
-			const FArrayProperty* AbilityTriggerProperty = FindFProperty<FArrayProperty>(Ability->GetClass(), GET_MEMBER_NAME_CHECKED(UDummyAbility, AbilityTriggers));
-			if (!AbilityTriggerProperty)
-			{
-				continue;
-			}
-
-			const TArray<FAbilityTriggerData>* AbilityTriggersPtr = AbilityTriggerProperty->ContainerPtrToValuePtr<TArray<FAbilityTriggerData>>(Ability);
-			if (!ensure(AbilityTriggersPtr))
+			const TArray<FAbilityTriggerData>* AbilityTriggersPtr = FGASAbilityAccessors::FindAbilityTriggers(Ability);
+			if (!AbilityTriggersPtr)
 			{
 				continue;
 			}
@@ -238,18 +226,18 @@ void SGASTriggersWidget::UpdateAssetsList()
 					continue;
 				}
 
-				TriggerAssetsTreeList.Add(MakeShared<FGASTriggerAssetItem>(Asset, Trigger));
+				TriggerAssetsListItems.Add(MakeShared<FGASTriggerAssetItem>(Asset, Trigger));
 				break;
 			}
 		}
 	}
 
-	TriggerAssetsTreeList.Sort([](const TSharedPtr<FGASTriggerAssetItem>& A, const TSharedPtr<FGASTriggerAssetItem>& B)
+	TriggerAssetsListItems.Sort([](const TSharedPtr<FGASTriggerAssetItem>& A, const TSharedPtr<FGASTriggerAssetItem>& B)
 	{
 		return A->GetTagNameString() > B->GetTagNameString();
 	});
 
-	TriggerAssetsTree->RequestTreeRefresh();
+	TriggerAssetsList->RequestListRefresh();
 }
 
 #undef LOCTEXT_NAMESPACE

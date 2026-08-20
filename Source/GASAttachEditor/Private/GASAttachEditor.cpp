@@ -1,23 +1,21 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GASAttachEditor.h"
-
 #include "Widgets/SGASEditorWidget.h"
 #include "GASAttachEditorCommands.h"
 #include "Widgets/SGASTriggersWidget.h"
+#include "Widgets/Docking/SDockTab.h"
 
 #if WITH_EDITOR
+#include "LevelEditor.h"
 #include "WorkspaceMenuStructure.h"
 #include "WorkspaceMenuStructureModule.h"
 #endif
 
-#include "Widgets/Docking/SDockTab.h"
-
-
 static const FName GASAttachEditorTabName("GASAttachEditor");
 static const FName GASTriggersEditorTabName("GASTriggersEditor");
 
-#define LOCTEXT_NAMESPACE "FGASAttachEditorModule"
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
 
 void FGASAttachEditorModule::StartupModule()
 {
@@ -27,6 +25,27 @@ void FGASAttachEditorModule::StartupModule()
 	FGASAttachEditorCommands::Register();
 
 	PluginCommands = MakeShared<FUICommandList>();
+
+	const FGASAttachEditorCommands& Commands = FGASAttachEditorCommands::Get();
+
+	PluginCommands->MapAction(
+		Commands.ShowGASAttachEditorViewer,
+		FExecuteAction::CreateLambda([]
+		{
+			FGlobalTabmanager::Get()->TryInvokeTab(GASAttachEditorTabName);
+		}));
+
+#if WITH_EDITOR
+	PluginCommands->MapAction(
+		Commands.ShowGASTagLookAssetViewer,
+		FExecuteAction::CreateLambda([]
+		{
+			FGlobalTabmanager::Get()->TryInvokeTab(GASTriggersEditorTabName);
+		}));
+
+	FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
+	LevelEditorModule.GetGlobalLevelEditorActions()->Append(PluginCommands.ToSharedRef());
+#endif
 
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(GASAttachEditorTabName, FOnSpawnTab::CreateRaw(this, &FGASAttachEditorModule::OnSpawnGASEditorTab))
 		.SetDisplayName(LOCTEXT("FGASAttachEditorTabTitle", "Ability System Viewer"))
@@ -48,12 +67,6 @@ void FGASAttachEditorModule::StartupModule()
 
 void FGASAttachEditorModule::ShutdownModule()
 {
-#if WITH_EDITOR
-	UToolMenus::UnRegisterStartupCallback(this);
-
-	UToolMenus::UnregisterOwner(this);
-#endif
-
 	FGASAttachEditorStyle::Shutdown();
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GASAttachEditorTabName);
@@ -61,16 +74,7 @@ void FGASAttachEditorModule::ShutdownModule()
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GASTriggersEditorTabName);
 #endif
 
-	if (GASEditorTabManager.IsValid())
-	{
-		FGlobalTabmanager::Get()->UnregisterTabSpawner(GASAttachEditorTabName);
-#if WITH_EDITOR
-		FGlobalTabmanager::Get()->UnregisterTabSpawner(GASTriggersEditorTabName);
-#endif
-
-		GASEditorTabLayout.Reset();
-		GASEditorTabManager.Reset();
-	}
+	PluginCommands.Reset();
 
 	FGASAttachEditorCommands::Unregister();
 }

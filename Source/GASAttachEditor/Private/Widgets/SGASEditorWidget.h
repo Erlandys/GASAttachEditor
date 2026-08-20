@@ -4,10 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Framework/Docking/TabManager.h"
 
-class SGASGameplayTagsTab;
 class SGASAbilitiesTab;
 class SGASAttributesTab;
+class SGASGameplayTagsTab;
 class SGASGameplayEffectsTab;
 class UAbilitySystemComponent;
 
@@ -18,6 +19,8 @@ public:
 	{}
 		SLATE_ARGUMENT(TSharedPtr<SDockTab>, ParentTab)
 	SLATE_END_ARGS()
+
+	virtual ~SGASEditorWidget() override;
 
 	void Construct(const FArguments& InArgs);
 
@@ -35,8 +38,20 @@ private:
 	TSharedRef<SDockTab> SpawnGameplayEffectsTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnGameplayTagsTab(const FSpawnTabArgs& Args);
 
+	static const TCHAR* ContinuousUpdateKey;
+	static const TCHAR* TrackSelectionKey;
+
+#if WITH_EDITOR
+	void HandleEditorSelectionChanged(UObject* NewSelection);
+	static UAbilitySystemComponent* FindRelatedAbilitySystemComponent(AActor* Actor);
+	static UAbilitySystemComponent* FindAbilitySystemComponentChecked(AActor* Actor);
+#endif
+
 	void ValidateSelections();
-	FReply Refresh() const;
+	void SelectLocallyControlledComponent();
+	void ClearSelection();
+	void Refresh();
+	FReply HandleRefreshClicked();
 	TSharedRef<SWidget> OnGetWorldTypes();
 	void OnChangeWorldType(FName WorldContextHandle);
 	TSharedRef<SWidget> OnGetActorsList();
@@ -47,7 +62,18 @@ private:
 	FText GetWorldInstanceName(FName WorldContextHandle) const;
 
 private:
+	static constexpr double UpdateInterval = 0.1;
+
+	double LastUpdateTime = 0.0;
+
 	bool bContinuousUpdate = false;
+	bool bTrackSelection = false;
+
+#if WITH_EDITOR
+	FDelegateHandle SelectionChangedHandle;
+#endif
+	bool bSelectionStopped = false;
+
 	FName SelectedWorldContextHandle;
 	FText SelectedWorldTitle;
 	TArray<TWeakObjectPtr<UAbilitySystemComponent>> AbilitySystemComponents;

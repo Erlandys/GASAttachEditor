@@ -1,8 +1,10 @@
-﻿#pragma once
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayTagContainer.h"
 #include "Widgets/Views/STileView.h"
+#include "GameplayTagContainer.h"
 
 class UAbilitySystemComponent;
 
@@ -31,14 +33,6 @@ private:
 	const TWeakObjectPtr<UAbilitySystemComponent> WeakComponent;
 	const FGameplayTag Tag;
 	const FName PropertyName;
-};
-
-class SGASTagView : public STileView<TSharedPtr<FGASTagNode>>
-{
-public:
-	//~ Begin STileView Interface
-	virtual void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime ) override;
-	//~ End STileView Interface
 };
 
 class SGASTagViewItem : public SCompoundWidget

@@ -2,8 +2,8 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0",
-	"FriendlyName": "GASAttachEditor",
-	"Description": "用于查看角色中携带的GA",
+	"FriendlyName": "GAS Attach Editor",
+	"Description": "Ability System Viewer - inspect the abilities, attributes, gameplay effects and tags on any Ability System Component in a running world, including a dedicated server.",
 	"Category": "Gameplay",
 	"CreatedBy": "Monocluar, updated by Erlandas",
 	"CreatedByURL": "",
@@ -21,7 +21,7 @@
 			"AdditionalDependencies": [
 				"GameplayAbilities"
 			],
-			"WhitelistPlatforms": [
+			"PlatformAllowList": [
 				"Win64",
 				"Linux"
 			]

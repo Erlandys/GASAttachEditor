@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -6,10 +6,11 @@
 #include "Modules/ModuleManager.h"
 #include "Framework/Docking/TabManager.h"
 
-class FToolBarBuilder;
-class FMenuBuilder;
 class SWidget;
 class SDockTab;
+class FMenuBuilder;
+class FUICommandList;
+class FToolBarBuilder;
 
 class FGASAttachEditorModule : public IModuleInterface
 {
@@ -30,6 +31,4 @@ private:
 	TSharedPtr<FUICommandList> PluginCommands;
 	TWeakPtr<SDockTab> GASEditorTab;
 	TWeakPtr<SDockTab> GASTriggersTab;
-	TSharedPtr<FTabManager> GASEditorTabManager;
-	TSharedPtr<FTabManager::FLayout> GASEditorTabLayout;
 };

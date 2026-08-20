@@ -40,6 +40,7 @@ public class GASAttachEditor : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+				"ToolWidgets",
 				"GameplayAbilities",
 				"GameplayTags",
 				"AssetRegistry",
@@ -64,6 +65,7 @@ public class GASAttachEditor : ModuleRules
                 "UnrealEd",
                 "EditorStyle",
 				"GameplayTagsEditor",
+				"LevelEditor",
 				"WorkspaceMenuStructure",
 				"ToolMenus",
 			}

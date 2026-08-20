@@ -1,18 +1,19 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Widgets/SCompoundWidget.h"
 #include "GameplayTagContainer.h"
+
 #if WITH_EDITOR
 #include "SGameplayTagWidget.h"
 #endif
-#include "Widgets/SCompoundWidget.h"
 
-class UAbilitySystemComponent;
 class SWrapBox;
+class UAbilitySystemComponent;
 
-class GASATTACHEDITOR_API SGASGameplayTagsTab : public SCompoundWidget
+class SGASGameplayTagsTab : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SGASGameplayTagsTab)

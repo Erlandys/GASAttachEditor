@@ -1,25 +1,30 @@
-﻿#include "SGASAbilityItem.h"
+// Fill out your copyright notice in the Description page of Project Settings.
 
+#include "SGASAbilityItem.h"
+
+#include "GASAttachEditorAbilityAccessors.h"
 #include "Styling/StyleColors.h"
 #include "AbilitySystemComponent.h"
 #include "Widgets/Input/SHyperlink.h"
 
 #if WITH_EDITOR
+#include "Editor.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #endif
 
-#define LOCTEXT_NAMESPACE "SGASAttachEditor"
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
 
-FGASAbilityNode::FGASAbilityNode(const TWeakObjectPtr<UAbilitySystemComponent>& ASC, const FGameplayAbilitySpec& AbilitySpec)
+FGASAbilityNode::FGASAbilityNode(const TWeakObjectPtr<UAbilitySystemComponent>& ASC, const FGameplayAbilitySpecHandle& AbilitySpecHandle)
 	: Type(EGAAbilityNode::Ability)
-	, AbilitySpecPtr(AbilitySpec)
+	, AbilitySpecHandle(AbilitySpecHandle)
 	, WeakComponent(ASC)
 {
 }
 
-FGASAbilityNode::FGASAbilityNode(const TWeakObjectPtr<UAbilitySystemComponent>& ASC, const FGameplayAbilitySpec& AbilitySpec, const TWeakObjectPtr<UGameplayTask>& InGameplayTask)
+FGASAbilityNode::FGASAbilityNode(const TWeakObjectPtr<UAbilitySystemComponent>& ASC, const FGameplayAbilitySpecHandle& AbilitySpecHandle, const TWeakObjectPtr<UGameplayTask>& InGameplayTask)
 	: Type(EGAAbilityNode::Task)
-	, AbilitySpecPtr(AbilitySpec)
+	, AbilitySpecHandle(AbilitySpecHandle)
 	, WeakComponent(ASC)
 	, GameplayTask(InGameplayTask)
 {
@@ -29,22 +34,59 @@ FGASAbilityNode::FGASAbilityNode(const TWeakObjectPtr<UAbilitySystemComponent>& 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-void FGASAbilityNode::Update(const FGameplayAbilitySpec& AbilitySpec, const uint8 VisibleStates)
+void FGASAbilityNode::Update()
 {
-	AbilitySpecPtr = AbilitySpec;
 	Name = FetchName();
 	State = FetchState(StateType);
 	TriggersData = FetchTriggersData();
-	ActiveState = IsActive() ? NSLOCTEXT("WidgetReflectorNode ","WidgetClippingYes", "Yes") : NSLOCTEXT("WidgetReflectorNode ", "WidgetClippingNo", "No");
-	UpdateVisibility(VisibleStates);
+	ActiveState = IsActive() ? LOCTEXT("AbilityIsActiveYes", "Yes") : LOCTEXT("AbilityIsActiveNo", "No");
+	FetchSourceAsset();
 	FixupColor();
 
-	FixupTasks(VisibleStates);
+	FixupTasks();
 }
 
-void FGASAbilityNode::UpdateVisibility(const uint8 VisibleStates)
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+const FGameplayAbilitySpec* FGASAbilityNode::FindAbilitySpec() const
 {
-	Visibility = (VisibleStates & StateType) == StateType ? EVisibility::Visible : EVisibility::Collapsed;
+	const UAbilitySystemComponent* Component = WeakComponent.Get();
+	if (!Component)
+	{
+		return nullptr;
+	}
+
+	return Component->FindAbilitySpecFromHandle(AbilitySpecHandle);
+}
+
+UGameplayAbility* FGASAbilityNode::FindAbility() const
+{
+	const FGameplayAbilitySpec* AbilitySpec = FindAbilitySpec();
+	if (!AbilitySpec)
+	{
+		return nullptr;
+	}
+
+	for (UGameplayAbility* Ability : AbilitySpec->GetAbilityInstances())
+	{
+		if (Ability)
+		{
+			return Ability;
+		}
+	}
+
+	return AbilitySpec->Ability;
+}
+
+bool FGASAbilityNode::IsActive() const
+{
+	const FGameplayAbilitySpec* AbilitySpec = FindAbilitySpec();
+
+	return
+		AbilitySpec &&
+		AbilitySpec->IsActive();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -59,12 +101,17 @@ FText FGASAbilityNode::FetchName() const
 		return {};
 	}
 
-	switch (Type)
+	if (Type == EGAAbilityNode::Task)
 	{
-	default: check(false);
-	case EGAAbilityNode::Ability: return FText::FromString(Component->CleanupName(GetNameSafe(AbilitySpecPtr.Ability)));
-	case EGAAbilityNode::Task: return FText::FromString(GameplayTask.IsValid() ? GameplayTask->GetDebugString() : "");
+		return FText::FromString(GameplayTask.IsValid() ? GameplayTask->GetDebugString() : "");
 	}
+	if (Type == EGAAbilityNode::Ability)
+	{
+		return FText::FromString(Component->CleanupName(GetNameSafe(FindAbility())));
+	}
+
+	ensure(false);
+	return {};
 }
 
 FText FGASAbilityNode::FetchState(EAbilityStateType::Type &OutStateType) const
@@ -80,43 +127,57 @@ FText FGASAbilityNode::FetchState(EAbilityStateType::Type &OutStateType) const
 		return {};
 	}
 
-	if (AbilitySpecPtr.IsActive())
+	const FGameplayAbilitySpec* AbilitySpec = FindAbilitySpec();
+	if (!AbilitySpec)
+	{
+		return {};
+	}
+
+	if (AbilitySpec->IsActive())
 	{
 		OutStateType = EAbilityStateType::Active;
 
-		return FText::Format(FText::FromString(TEXT("{0}: {1}")), LOCTEXT("ActiveCount", "Active Count"), AbilitySpecPtr.ActiveCount);
+		return FText::Format(LOCTEXT("ActiveCountFormat", "Active Count: {0}"), AbilitySpec->ActiveCount);
 	}
 
-	if (WeakComponent->IsAbilityInputBlocked(AbilitySpecPtr.InputID))
+	if (WeakComponent->IsAbilityInputBlocked(AbilitySpec->InputID))
 	{
 		OutStateType = EAbilityStateType::Blocked;
 
 		return LOCTEXT("InputBlocked", "Input Blocked");
 	}
 
+	const UGameplayAbility* Ability = FindAbility();
+	if (!Ability)
+	{
+		return {};
+	}
+
 #if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 5
-	if (WeakComponent->AreAbilityTagsBlocked(AbilitySpecPtr.Ability->GetAssetTags()))
+	if (WeakComponent->AreAbilityTagsBlocked(Ability->GetAssetTags()))
 #else
-	if (WeakComponent->AreAbilityTagsBlocked(AbilitySpecPtr.Ability->AbilityTags))
+	if (WeakComponent->AreAbilityTagsBlocked(Ability->AbilityTags))
 #endif
 	{
-		FGameplayTagContainer BlockedAbility;
-		WeakComponent->GetBlockedAbilityTags(BlockedAbility);
-
 		OutStateType = EAbilityStateType::Blocked;
 
 		return LOCTEXT("TagBlocked", "Blocked Tags");
 	}
 
 	FGameplayTagContainer FailureTags;
-	if (!AbilitySpecPtr.Ability->CanActivateAbility(AbilitySpecPtr.Handle, WeakComponent->AbilityActorInfo.Get(), nullptr, nullptr, &FailureTags))
+	if (!Ability->CanActivateAbility(AbilitySpecHandle, WeakComponent->AbilityActorInfo.Get(), nullptr, nullptr, &FailureTags))
 	{
 		OutStateType = EAbilityStateType::Blocked;
 
-		const float Cooldown =  AbilitySpecPtr.Ability->GetCooldownTimeRemaining(WeakComponent->AbilityActorInfo.Get());
+		const float Cooldown = Ability->GetCooldownTimeRemaining(WeakComponent->AbilityActorInfo.Get());
 		if (Cooldown > 0.f)
 		{
-			return FText::Format(FText::FromString(TEXT("{0}, {1}: {2}s")), LOCTEXT("CantActivate","Can't Activate"), LOCTEXT("Cooldown", "Cooldown Time"), Cooldown);
+			FNumberFormattingOptions NumberFormatOptions;
+			NumberFormatOptions.MaximumFractionalDigits = 2;
+
+			return FText::Format(
+				LOCTEXT("CantActivateCooldownFormat", "Can't Activate, Cooldown Time: {0}s"),
+				FText::AsNumber(Cooldown, &NumberFormatOptions));
 		}
 
 		return LOCTEXT("CantActivate", "Can't Activate");
@@ -127,42 +188,45 @@ FText FGASAbilityNode::FetchState(EAbilityStateType::Type &OutStateType) const
 
 FText FGASAbilityNode::FetchTriggersData() const
 {
-	if (!WeakComponent.IsValid() ||
-		!AbilitySpecPtr.Ability)
+	if (!WeakComponent.IsValid())
 	{
 		return {};
 	}
 
-	// To properly check AbilityTriggers variable for changes
-	class UDummyAbility : public UGameplayAbility
-	{
-		friend class FGASAbilityNode;
-	};
-
-	const FArrayProperty* ActiveTagsPtr = FindFProperty<FArrayProperty>(AbilitySpecPtr.Ability->GetClass(), GET_MEMBER_NAME_CHECKED(UDummyAbility, AbilityTriggers));
-	if (!ensure(ActiveTagsPtr))
+	UGameplayAbility* Ability = FindAbility();
+	if (!Ability)
 	{
 		return {};
 	}
 
-	const TArray<FAbilityTriggerData>* ActivationTagsPtr = ActiveTagsPtr->ContainerPtrToValuePtr<TArray<FAbilityTriggerData>>(AbilitySpecPtr.Ability);
+	const TArray<FAbilityTriggerData>* ActivationTagsPtr = FGASAbilityAccessors::FindAbilityTriggers(Ability);
 	if (!ensure(ActivationTagsPtr))
 	{
 		return {};
 	}
 
-	FString Text;
-	const TArray<FAbilityTriggerData>& ActivationTags = *ActivationTagsPtr;
-	for (int32 Index = 0; Index < ActivationTags.Num(); Index++)
+	TArray<FText> TriggerTexts;
+	for (const FAbilityTriggerData& TriggerData : *ActivationTagsPtr)
 	{
-		const FAbilityTriggerData* Item = &ActivationTags[Index];
-
-		Text += "Tag: (" + Item->TriggerTag.ToString() + "), Event: (" + UEnum::GetDisplayValueAsText(Item->TriggerSource).ToString() + ")\n";
+		TriggerTexts.Add(FText::Format(
+			LOCTEXT("AbilityTriggerFormat", "Tag: ({0}), Event: ({1})"),
+			FText::FromName(TriggerData.TriggerTag.GetTagName()),
+			UEnum::GetDisplayValueAsText(TriggerData.TriggerSource)));
 	}
 
-	Text.RemoveFromEnd("\n");
+	return FText::Join(FText::FromString(TEXT("\n")), TriggerTexts);
+}
 
-	return FText::FromString(Text);
+void FGASAbilityNode::FetchSourceAsset()
+{
+	// Resolve once - after that it must survive the ability, the component and PIE itself
+	if (SourceAsset.IsValid() ||
+		Type != EGAAbilityNode::Ability)
+	{
+		return;
+	}
+
+	SourceAsset = FGASSourceAsset::FromObject(FindAbility());
 }
 
 void FGASAbilityNode::FixupColor()
@@ -176,10 +240,12 @@ void FGASAbilityNode::FixupColor()
 	}
 }
 
-void FGASAbilityNode::FixupTasks(const uint8 VisibleStates)
+void FGASAbilityNode::FixupTasks()
 {
+	const FGameplayAbilitySpec* AbilitySpec = FindAbilitySpec();
 	if (!WeakComponent.IsValid() ||
-		!AbilitySpecPtr.IsActive() ||
+		!AbilitySpec ||
+		!AbilitySpec->IsActive() ||
 		Type != EGAAbilityNode::Ability)
 	{
 		MappedChildNodes = {};
@@ -187,16 +253,10 @@ void FGASAbilityNode::FixupTasks(const uint8 VisibleStates)
 		return;
 	}
 
-	// To properly check AbilityTriggers variable for changes
-	class UDummyAbility : public UGameplayAbility
-	{
-		friend class FGASAbilityNode;
-	};
-
-	TSet<int32> InactiveTasks;
+	TSet<FObjectKey> InactiveTasks;
 	MappedChildNodes.GetKeys(InactiveTasks);
 
-	TArray<UGameplayAbility*> Instances = AbilitySpecPtr.GetAbilityInstances();
+	TArray<UGameplayAbility*> Instances = AbilitySpec->GetAbilityInstances();
 	for (UGameplayAbility* Instance : Instances)
 	{
 		if (!ensure(Instance))
@@ -204,43 +264,37 @@ void FGASAbilityNode::FixupTasks(const uint8 VisibleStates)
 			continue;
 		}
 
-		const FArrayProperty* Property = FindFProperty<FArrayProperty>(Instance->GetClass(), GET_MEMBER_NAME_CHECKED(UDummyAbility, ActiveTasks));
-		if (!ensure(Property))
-		{
-			continue;
-		}
-
-		const TArray<UGameplayTask*>* ActiveTasksPtr = Property->ContainerPtrToValuePtr<TArray<UGameplayTask*>>(Instance);
+		const TArray<TObjectPtr<UGameplayTask>>* ActiveTasksPtr = FGASAbilityAccessors::FindActiveTasks(Instance);
 		if (!ensure(ActiveTasksPtr))
 		{
 			continue;
 		}
 
-		TArray<UGameplayTask*> ActiveTasks = *ActiveTasksPtr;
+		TArray<TObjectPtr<UGameplayTask>> ActiveTasks = *ActiveTasksPtr;
 		for (UGameplayTask* Item : ActiveTasks)
 		{
-			if (!ensure(Item))
+			if (!Item)
 			{
 				continue;
 			}
 
-			int32 Key = GetTypeHash(Item);
+			const FObjectKey Key(Item);
 			InactiveTasks.Remove(Key);
 
 			if (const TSharedPtr<FGASAbilityNode>& Task = MappedChildNodes.FindRef(Key))
 			{
 				Task->GameplayTask = Item;
-				Task->Update(AbilitySpecPtr, VisibleStates);
+				Task->Update();
 				continue;
 			}
 
-			TSharedRef<FGASAbilityNode> NewTask = MakeShared<FGASAbilityNode>(WeakComponent, AbilitySpecPtr, Item);
-			NewTask->Update(AbilitySpecPtr, VisibleStates);
+			TSharedRef<FGASAbilityNode> NewTask = MakeShared<FGASAbilityNode>(WeakComponent, AbilitySpecHandle, Item);
+			NewTask->Update();
 			MappedChildNodes.Add(Key, NewTask);
 		}
 	}
 
-	for (const int32 InactiveTask : InactiveTasks)
+	for (const FObjectKey& InactiveTask : InactiveTasks)
 	{
 		MappedChildNodes.Remove(InactiveTask);
 	}
@@ -251,30 +305,6 @@ void FGASAbilityNode::FixupTasks(const uint8 VisibleStates)
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
-
-FString FGASAbilityNode::GetWidgetAssetData() const
-{
-	if (Type != EGAAbilityNode::Ability)
-	{
-		return {};
-	}
-
-	const UGameplayAbility* Ability = AbilitySpecPtr.Ability;
-	if (!Ability ||
-		Ability->GetClass()->IsNative())
-	{
-		return {};
-	}
-
-	const FSoftObjectPath ObjectPath(Ability);
-
-	// Fixup path name, to open proper asset, instead of CDO asset
-	FString PathName = ObjectPath.GetAssetName();
-	PathName.RemoveFromStart("Default__");
-	PathName.RemoveFromEnd("_C");
-
-	return ObjectPath.GetLongPackageName() + "." + PathName;
-}
 
 const TArray<TSharedPtr<FGASAbilityNode>>& FGASAbilityNode::GetChildNodes() const
 {
@@ -288,11 +318,10 @@ const TArray<TSharedPtr<FGASAbilityNode>>& FGASAbilityNode::GetChildNodes() cons
 void SGASAbilityItem::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView)
 {
 	WidgetInfo = InArgs._WidgetInfoToVisualize;
+	HighlightText = InArgs._HighlightText;
 	SetPadding(0);
 
 	check(WidgetInfo.IsValid());
-
-	SetVisibility(MakeAttributeSP(WidgetInfo.Get(), &FGASAbilityNode::GetVisibility));
 
 	SMultiColumnTableRow<TSharedRef<FGASAbilityNode>>::Construct(SMultiColumnTableRow<TSharedRef<FGASAbilityNode>>::FArguments().Padding(0.f), InOwnerTableView);
 }
@@ -330,18 +359,20 @@ TSharedRef<SWidget> SGASAbilityItem::GenerateWidgetForColumn(const FName& Column
 TSharedRef<SWidget> SGASAbilityItem::CreateNameColumn()
 {
 	TSharedPtr<SWidget> NameWidgetBlock;
-	if (WidgetInfo->HasValidWidgetAssetData())
+	if (WidgetInfo->CanNavigateToSource())
 	{
 		NameWidgetBlock =
 			SNew(SHyperlink)
 			.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASAbilityNode::GetName))
+			.HighlightText(HighlightText)
 			.OnNavigate(this, &SGASAbilityItem::HandleHyperlinkNavigate);
 	}
 	else
 	{
 		NameWidgetBlock =
 			SNew(STextBlock)
-			.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASAbilityNode::GetName));
+			.Text(MakeAttributeSP(WidgetInfo.Get(), &FGASAbilityNode::GetName))
+			.HighlightText(HighlightText);
 	}
 
 	return
@@ -424,28 +455,7 @@ TSharedRef<SWidget> SGASAbilityItem::CreateTriggersColumn() const
 
 void SGASAbilityItem::HandleHyperlinkNavigate() const
 {
-	if (!WidgetInfo->HasValidWidgetAssetData())
-	{
-		return;
-	}
-
-#if WITH_EDITOR
-	const FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	const FAssetData AssetData = AssetRegistryModule.Get().GetAssetByObjectPath(FSoftObjectPath(*WidgetInfo->GetWidgetAssetData()));
-
-	if (!AssetData.IsValid())
-	{
-		return;
-	}
-
-	UObject* Object = AssetData.GetAsset();
-	if (!ensure(Object))
-	{
-		return;
-	}
-
-	GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Object);
-#endif
+	WidgetInfo->NavigateToSource();
 }
 
 #undef LOCTEXT_NAMESPACE

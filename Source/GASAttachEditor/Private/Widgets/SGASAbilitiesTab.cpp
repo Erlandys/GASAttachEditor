@@ -1,11 +1,21 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "SGASAbilitiesTab.h"
 
 #include "SGASAbilityItem.h"
-#include "AbilitySystemComponent.h"
+#include "GASAttachEditorSettings.h"
 
-#define LOCTEXT_NAMESPACE "SGASEditor"
+#include "AbilitySystemComponent.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Widgets/Input/SSearchBox.h"
+
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
+
+const TCHAR* SGASAbilitiesTab::VisibleStatesKey = TEXT("Abilities.VisibleStates");
+const TCHAR* SGASAbilitiesTab::SortModeKey = TEXT("Abilities.SortMode");
+const TCHAR* SGASAbilitiesTab::HiddenColumnsKey = TEXT("Abilities.HiddenColumns");
 
 const FName SGASAbilitiesTab::AbilityNameColumn = "Ability_Name";
 const FName SGASAbilitiesTab::AbilityStateColumn = "Ability_State";
@@ -14,27 +24,39 @@ const FName SGASAbilitiesTab::AbilityTriggersColumn = "Ability_Triggers";
 
 void SGASAbilitiesTab::Construct(const FArguments& InArgs)
 {
+	SearchFilter = MakeShared<FGASAbilityTextFilter>(FGASAbilityTextFilter::FItemToStringArray::CreateSP(this, &SGASAbilitiesTab::PopulateSearchStrings));
+
+	LoadSettings();
+
 	ChildSlot
 	[
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot()
 		.Padding(2.f)
 		.AutoHeight()
-		.HAlign(HAlign_Left)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
+			.AutoWidth()
 			[
 				CreateStateSettingsCheckBox(EAbilityStateType::Active)
 			]
 			+ SHorizontalBox::Slot()
+			.AutoWidth()
 			[
 				CreateStateSettingsCheckBox(EAbilityStateType::Blocked)
 			]
 			+ SHorizontalBox::Slot()
+			.AutoWidth()
 			[
 				CreateStateSettingsCheckBox(EAbilityStateType::Inactive)
 			]
+		]
+		+ SVerticalBox::Slot()
+		.Padding(2.f)
+		.AutoHeight()
+		[
+			CreateSearchBox()
 		]
 		+ SVerticalBox::Slot()
 		.FillHeight(1.f)
@@ -43,26 +65,35 @@ void SGASAbilitiesTab::Construct(const FArguments& InArgs)
 			.Padding(0.f)
 			[
 				SAssignNew(AbilitiesTree, SAbilitiesTree)
-				.TreeItemsSource(&AbilitiesList)
+				.TreeItemsSource(&FilteredAbilitiesList)
 				.OnGenerateRow_Lambda([this](TSharedPtr<FGASAbilityNode> Item, const TSharedRef<STableViewBase>& OwnerTable)
 				{
 					return
 						SNew(SGASAbilityItem, OwnerTable)
 						.WidgetInfoToVisualize(Item)
+						.HighlightText(this, &SGASAbilitiesTab::GetHighlightText)
 						.ToolTipText(MakeAttributeSP(Item.Get(), &FGASAbilityNode::GetTriggersData));
 				})
 				.OnGetChildren_Lambda([this](TSharedPtr<FGASAbilityNode> Item, TArray<TSharedPtr<FGASAbilityNode>>& OutChildren)
 				{
-					OutChildren = Item->GetChildNodes();
+					const bool bParentMatches = MatchesFilter(*Item);
+					for (const TSharedPtr<FGASAbilityNode>& ChildNode : Item->GetChildNodes())
+					{
+						if (bParentMatches ||
+							PassesFilter(ChildNode))
+						{
+							OutChildren.Add(ChildNode);
+						}
+					}
 				})
 				.HighlightParentNodesForSelection(true)
 				.HeaderRow
 				(
-					SNew(SHeaderRow)
+					SAssignNew(HeaderRow, SHeaderRow)
 					.CanSelectGeneratedColumn(true)
-					// .HiddenColumnsList(Hidden)
-					.OnHiddenColumnsListChanged_Lambda([]{})
-	
+					.HiddenColumnsList(HiddenColumns)
+					.OnHiddenColumnsListChanged(FSimpleDelegate::CreateSP(this, &SGASAbilitiesTab::SaveHiddenColumns))
+
 					+ SHeaderRow::Column(AbilityNameColumn)
 					.SortMode_Lambda([this]
 					{
@@ -71,6 +102,7 @@ void SGASAbilitiesTab::Construct(const FArguments& InArgs)
 					.OnSort_Lambda([this](const EColumnSortPriority::Type SortPriority, const FName& ColumnId, const EColumnSortMode::Type InSortMode)
 					{
 						SortMode = InSortMode;
+						SaveSettings();
 						SortAbilities();
 					})
 					.DefaultLabel(LOCTEXT("AbilityNameColumn", "Name"))
@@ -115,12 +147,12 @@ void SGASAbilitiesTab::Refresh(UAbilitySystemComponent* Component)
 			UnusedAbilities.Remove(AbilitySpec.Handle);
 			if (const TSharedPtr<FGASAbilityNode>& AbilityNode = MappedAbilities.FindRef(AbilitySpec.Handle))
 			{
-				AbilityNode->Update(AbilitySpec, VisibleStateTypes);
+				AbilityNode->Update();
 				continue;
 			}
 
-			TSharedRef<FGASAbilityNode> NewItem = MakeShared<FGASAbilityNode>(Component, AbilitySpec);
-			NewItem->Update(AbilitySpec, VisibleStateTypes);
+			TSharedRef<FGASAbilityNode> NewItem = MakeShared<FGASAbilityNode>(Component, AbilitySpec.Handle);
+			NewItem->Update();
 
 			MappedAbilities.Add(AbilitySpec.Handle, NewItem);
 		}
@@ -134,6 +166,20 @@ void SGASAbilitiesTab::Refresh(UAbilitySystemComponent* Component)
 	MappedAbilities.GenerateValueArray(AbilitiesList);
 
 	SortAbilities();
+}
+
+TSharedRef<SWidget> SGASAbilitiesTab::CreateSearchBox()
+{
+	return
+		SAssignNew(SearchBox, SSearchBox)
+		.HintText(LOCTEXT("AbilitySearchHint", "Search abilities, states and triggers"))
+		.DelayChangeNotificationsWhileTyping(true)
+		.OnTextChanged_Lambda([this](const FText& NewText)
+		{
+			SearchFilter->SetRawFilterText(NewText);
+			SearchBox->SetError(SearchFilter->GetFilterErrorText());
+			ApplyFilter();
+		});
 }
 
 TSharedRef<SCheckBox> SGASAbilitiesTab::CreateStateSettingsCheckBox(const EAbilityStateType::Type StateType)
@@ -164,10 +210,8 @@ TSharedRef<SCheckBox> SGASAbilitiesTab::CreateStateSettingsCheckBox(const EAbili
 			case ECheckBoxState::Undetermined: break;
 			}
 
-			for (const TSharedPtr<FGASAbilityNode>& AbilityNode : AbilitiesList)
-			{
-				AbilityNode->UpdateVisibility(VisibleStateTypes);
-			}
+			SaveSettings();
+			ApplyFilter();
 		})
 		[
 			SNew(SBox)
@@ -193,11 +237,118 @@ void SGASAbilitiesTab::SortAbilities()
 	{
 		AbilitiesList.Sort([](const TSharedPtr<FGASAbilityNode>& A, const TSharedPtr<FGASAbilityNode>& B)
 		{
-			return A->GetName().ToString() >= B->GetName().ToString();
+			return A->GetName().ToString() > B->GetName().ToString();
 		});
 	}
 
+	ApplyFilter();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+void SGASAbilitiesTab::PopulateSearchStrings(const FGASAbilityNode& Node, TArray<FString>& OutSearchStrings) const
+{
+	OutSearchStrings.Add(Node.GetName().ToString());
+	OutSearchStrings.Add(Node.GetState().ToString());
+	OutSearchStrings.Add(Node.GetTriggersData().ToString());
+}
+
+FText SGASAbilitiesTab::GetHighlightText() const
+{
+	return SearchFilter->GetRawFilterText();
+}
+
+bool SGASAbilitiesTab::IsFilterActive() const
+{
+	return !SearchFilter->GetRawFilterText().IsEmpty();
+}
+
+bool SGASAbilitiesTab::MatchesFilter(const FGASAbilityNode& Node) const
+{
+	if (Node.GetNodeType() == EGAAbilityNode::Ability &&
+		(VisibleStateTypes & Node.GetStateType()) == 0)
+	{
+		return false;
+	}
+
+	return SearchFilter->PassesFilter(Node);
+}
+
+bool SGASAbilitiesTab::PassesFilter(const TSharedPtr<FGASAbilityNode>& Node) const
+{
+	if (!Node)
+	{
+		return false;
+	}
+
+	if (MatchesFilter(*Node))
+	{
+		return true;
+	}
+
+	for (const TSharedPtr<FGASAbilityNode>& ChildNode : Node->GetChildNodes())
+	{
+		if (PassesFilter(ChildNode))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void SGASAbilitiesTab::ApplyFilter()
+{
+	FilteredAbilitiesList.Reset();
+
+	const bool bFilterActive = IsFilterActive();
+	for (const TSharedPtr<FGASAbilityNode>& AbilityNode : AbilitiesList)
+	{
+		if (!PassesFilter(AbilityNode))
+		{
+			continue;
+		}
+
+		FilteredAbilitiesList.Add(AbilityNode);
+
+		if (bFilterActive &&
+			!MatchesFilter(*AbilityNode))
+		{
+			AbilitiesTree->SetItemExpansion(AbilityNode, true);
+		}
+	}
+
 	AbilitiesTree->RequestTreeRefresh();
+}
+
+void SGASAbilitiesTab::LoadSettings()
+{
+	TSet<FName> HiddenColumnSet;
+	FGASAttachEditorSettings::LoadNameSet(HiddenColumnsKey, HiddenColumnSet);
+	HiddenColumns = HiddenColumnSet.Array();
+
+	VisibleStateTypes = static_cast<uint8>(FGASAttachEditorSettings::LoadInt(VisibleStatesKey, EAbilityStateType::MAX));
+	SortMode = FGASAttachEditorSettings::LoadSortMode(SortModeKey);
+}
+
+void SGASAbilitiesTab::SaveSettings() const
+{
+	FGASAttachEditorSettings::SaveInt(VisibleStatesKey, VisibleStateTypes);
+	FGASAttachEditorSettings::SaveSortMode(SortModeKey, SortMode);
+}
+
+void SGASAbilitiesTab::SaveHiddenColumns()
+{
+	if (!HeaderRow)
+	{
+		return;
+	}
+
+	HiddenColumns = HeaderRow->GetHiddenColumnIds();
+
+	FGASAttachEditorSettings::SaveNameSet(HiddenColumnsKey, TSet<FName>(HiddenColumns));
 }
 
 #undef LOCTEXT_NAMESPACE

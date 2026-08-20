@@ -1,25 +1,61 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "SGASEditorWidget.h"
 
-#include "AbilitySystemComponent.h"
 #include "SGASAbilitiesTab.h"
 #include "SGASAttributesTab.h"
 #include "SGASGameplayTagsTab.h"
 #include "SGASGameplayEffectsTab.h"
+#include "GASAttachEditorSettings.h"
 
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystemComponent.h"
+#include "GameFramework/Pawn.h"
+#include "Widgets/Input/SButton.h"
+#include "UObject/UObjectIterator.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "GameFramework/Controller.h"
+#include "Widgets/Docking/SDockTab.h"
 #include "GameFramework/PlayerState.h"
 #include "Widgets/Input/SComboButton.h"
+#include "GameFramework/PlayerController.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 
-#define LOCTEXT_NAMESPACE "SGASEditor"
+#if WITH_EDITOR
+#include "Editor.h"
+#include "Selection.h"
+#include "UnrealEdMisc.h"
+#include "Framework/Docking/LayoutService.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "GASAttachEditor"
+
+const TCHAR* SGASEditorWidget::ContinuousUpdateKey = TEXT("ContinuousUpdate");
+const TCHAR* SGASEditorWidget::TrackSelectionKey = TEXT("TrackSelection");
 
 static const FName AbilitiesTabName = "SGASEditor.AbilitiesTab";
 static const FName AttributesTabName = "SGASEditor.AttributesTab";
 static const FName GameplayEffectsTabName = "SGASEditor.GameplayEffectsTab";
 static const FName GameplayTagsTabName = "SGASEditor.GameplayTagsTab";
 
+SGASEditorWidget::~SGASEditorWidget()
+{
+#if WITH_EDITOR
+	if (SelectionChangedHandle.IsValid())
+	{
+		USelection::SelectionChangedEvent.Remove(SelectionChangedHandle);
+	}
+#endif
+}
+
 void SGASEditorWidget::Construct(const FArguments& InArgs)
 {
+	bContinuousUpdate = FGASAttachEditorSettings::LoadBool(ContinuousUpdateKey, false);
+#if WITH_EDITOR
+	bTrackSelection = FGASAttachEditorSettings::LoadBool(TrackSelectionKey, false);
+	SelectionChangedHandle = USelection::SelectionChangedEvent.AddSP(this, &SGASEditorWidget::HandleEditorSelectionChanged);
+#endif
+
 	CreateTabManager(InArgs._ParentTab);
 
 	SelectedWorldTitle = LOCTEXT("None", "None");
@@ -50,10 +86,19 @@ void SGASEditorWidget::Construct(const FArguments& InArgs)
 					.OnGetMenuContent(this, &SGASEditorWidget::OnGetWorldTypes)
 					.VAlign(VAlign_Center)
 					.ContentPadding(2.f)
+					.IsEnabled_Lambda([this]
+					{
+						return !bTrackSelection;
+					})
 					.ButtonContent()
 					[
 						SNew(STextBlock)
-						.ToolTipText(LOCTEXT("WorldToolTip", "World for actors selection"))
+						.ToolTipText_Lambda([this]
+						{
+							return bTrackSelection
+								? LOCTEXT("WorldTrackedToolTip", "Driven by Track Selected Object - turn it off to pick a world by hand")
+								: LOCTEXT("WorldToolTip", "World for actors selection");
+						})
 						.Text_Lambda([this]
 						{
 							return SelectedWorldTitle;
@@ -81,12 +126,19 @@ void SGASEditorWidget::Construct(const FArguments& InArgs)
 					.ContentPadding(2.f)
 					.IsEnabled_Lambda([this]
 					{
-						return !SelectedWorldContextHandle.IsNone();
+						return
+							!bTrackSelection &&
+							!SelectedWorldContextHandle.IsNone();
 					})
 					.ButtonContent()
 					[
 						SNew(STextBlock)
-						.ToolTipText(LOCTEXT("ActorSelectionToolTip", "Actor selection"))
+						.ToolTipText_Lambda([this]
+						{
+							return bTrackSelection
+								? LOCTEXT("ActorTrackedToolTip", "Driven by Track Selected Object - turn it off to pick an actor by hand")
+								: LOCTEXT("ActorSelectionToolTip", "Actor selection");
+						})
 						.Text_Lambda([this]
 						{
 							return SelectedComponentTitle;
@@ -106,7 +158,7 @@ void SGASEditorWidget::Construct(const FArguments& InArgs)
 				SNew(SButton)
 				.HAlign(HAlign_Left)
 				.Text(LOCTEXT("Refresh", "Refresh"))
-				.OnClicked(this, &SGASEditorWidget::Refresh)
+				.OnClicked(this, &SGASEditorWidget::HandleRefreshClicked)
 				.ToolTipText(LOCTEXT("RefreshToolTip", "Refreshes GAS data for selected world and actor"))
 				.IsEnabled_Lambda([this]
 				{
@@ -126,6 +178,7 @@ void SGASEditorWidget::Construct(const FArguments& InArgs)
 				.OnCheckStateChanged_Lambda([this](ECheckBoxState)
 				{
 					bContinuousUpdate = !bContinuousUpdate;
+					FGASAttachEditorSettings::SaveBool(ContinuousUpdateKey, bContinuousUpdate);
 				})
 				[
 					SNew(SBox)
@@ -134,17 +187,44 @@ void SGASEditorWidget::Construct(const FArguments& InArgs)
 					[
 						SNew(STextBlock)
 						.Text(LOCTEXT("ContinuousUpdate", "Continuous Update"))
-						.ToolTipText_Lambda([this]
-						{
-							if (bContinuousUpdate)
-							{
-								return LOCTEXT("ContinuousUpdateStop", "To stop continuous update press 'END' key");
-							}
-							return LOCTEXT("ContinuousUpdateStart", "To start continuous update press 'END' key");
-						})
+						.ToolTipText(LOCTEXT("ContinuousUpdateToolTip", "Re-read the selected component continuously instead of only when Refresh is pressed"))
 					]
 				]
 			]
+#if WITH_EDITOR
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(5.f, 0.f)
+			[
+				SNew(SCheckBox)
+				.Padding(FMargin(4.f, 0.f))
+				.IsChecked_Lambda([this]
+				{
+					return bTrackSelection ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+				})
+				.OnCheckStateChanged_Lambda([this](ECheckBoxState)
+				{
+					bTrackSelection = !bTrackSelection;
+					FGASAttachEditorSettings::SaveBool(TrackSelectionKey, bTrackSelection);
+
+					if (bTrackSelection &&
+						GEditor)
+					{
+						HandleEditorSelectionChanged(GEditor->GetSelectedActors());
+					}
+				})
+				[
+					SNew(SBox)
+					.MinDesiredWidth(125.f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("TrackSelection", "Track Selected Object"))
+						.ToolTipText(LOCTEXT("TrackSelectionToolTip", "Follow the editor selection. Selecting a Pawn, Controller or Player State inspects whichever of them owns the Ability System Component."))
+					]
+				]
+			]
+#endif
 		]
 		+ SVerticalBox::Slot()
 		.FillHeight(1.f)
@@ -168,6 +248,15 @@ void SGASEditorWidget::Construct(const FArguments& InArgs)
 void SGASEditorWidget::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+
+	// Both of these are expensive - ValidateSelections scans every UAbilitySystemComponent in memory,
+	// and a refresh re-gathers every row on every tab. Neither needs to happen at frame rate.
+	if (InCurrentTime - LastUpdateTime < UpdateInterval)
+	{
+		return;
+	}
+
+	LastUpdateTime = InCurrentTime;
 
 	ValidateSelections();
 
@@ -298,6 +387,166 @@ TSharedRef<SDockTab> SGASEditorWidget::SpawnGameplayTagsTab(const FSpawnTabArgs&
 		];
 }
 
+void SGASEditorWidget::SelectLocallyControlledComponent()
+{
+	for (const TWeakObjectPtr<UAbilitySystemComponent>& WeakComponent : AbilitySystemComponents)
+	{
+		UAbilitySystemComponent* Component = WeakComponent.Get();
+		if (!Component)
+		{
+			continue;
+		}
+
+		const AActor* Owner = Component->GetOwnerActor();
+
+		if (const APawn* Character = Cast<APawn>(Owner))
+		{
+			if (Character->IsLocallyControlled())
+			{
+				OnChangeSelectedActor(Component);
+				return;
+			}
+		}
+
+		if (const APlayerController* Controller = Cast<APlayerController>(Owner))
+		{
+			if (Controller->IsLocalController())
+			{
+				OnChangeSelectedActor(Component);
+				return;
+			}
+		}
+
+		if (const APlayerState* PlayerState = Cast<APlayerState>(Owner))
+		{
+			if (PlayerState->GetPlayerController() &&
+				PlayerState->GetPlayerController()->IsLocalController())
+			{
+				OnChangeSelectedActor(Component);
+				return;
+			}
+		}
+	}
+
+	OnChangeSelectedActor({});
+}
+
+#if WITH_EDITOR
+UAbilitySystemComponent* SGASEditorWidget::FindAbilitySystemComponentChecked(AActor* Actor)
+{
+	if (!Actor)
+	{
+		return nullptr;
+	}
+
+	return UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Actor, true);
+}
+
+UAbilitySystemComponent* SGASEditorWidget::FindRelatedAbilitySystemComponent(AActor* Actor)
+{
+	if (!Actor)
+	{
+		return nullptr;
+	}
+
+	if (UAbilitySystemComponent* Component = FindAbilitySystemComponentChecked(Actor))
+	{
+		return Component;
+	}
+
+	if (const APawn* Pawn = Cast<APawn>(Actor))
+	{
+		if (UAbilitySystemComponent* Component = FindAbilitySystemComponentChecked(Pawn->GetController()))
+		{
+			return Component;
+		}
+
+		if (UAbilitySystemComponent* Component = FindAbilitySystemComponentChecked(Pawn->GetPlayerState()))
+		{
+			return Component;
+		}
+	}
+
+	if (const AController* Controller = Cast<AController>(Actor))
+	{
+		if (UAbilitySystemComponent* Component = FindAbilitySystemComponentChecked(Controller->GetPawn()))
+		{
+			return Component;
+		}
+
+		if (UAbilitySystemComponent* Component = FindAbilitySystemComponentChecked(Controller->PlayerState))
+		{
+			return Component;
+		}
+	}
+
+	if (const APlayerState* PlayerState = Cast<APlayerState>(Actor))
+	{
+		if (UAbilitySystemComponent* Component = FindAbilitySystemComponentChecked(PlayerState->GetOwningController()))
+		{
+			return Component;
+		}
+
+		if (UAbilitySystemComponent* Component = FindAbilitySystemComponentChecked(PlayerState->GetPawn()))
+		{
+			return Component;
+		}
+	}
+
+	return nullptr;
+}
+
+void SGASEditorWidget::HandleEditorSelectionChanged(UObject* NewSelection)
+{
+	if (!bTrackSelection ||
+		!GEditor)
+	{
+		return;
+	}
+
+	USelection* Selection = Cast<USelection>(NewSelection);
+	if (!Selection)
+	{
+		return;
+	}
+
+	AActor* SelectedActor = Selection->GetTop<AActor>();
+	if (!SelectedActor)
+	{
+		return;
+	}
+
+	if (AActor* Counterpart = EditorUtilities::GetSimWorldCounterpartActor(SelectedActor))
+	{
+		SelectedActor = Counterpart;
+	}
+
+	UAbilitySystemComponent* Component = FindRelatedAbilitySystemComponent(SelectedActor);
+	if (!Component)
+	{
+		ClearSelection();
+		return;
+	}
+
+	const UWorld* World = Component->GetWorld();
+	if (!World)
+	{
+		ClearSelection();
+		return;
+	}
+
+	if (const FWorldContext* WorldContext = GEngine->GetWorldContextFromWorld(World))
+	{
+		if (WorldContext->ContextHandle != SelectedWorldContextHandle)
+		{
+			OnChangeWorldType(WorldContext->ContextHandle);
+		}
+	}
+
+	OnChangeSelectedActor(Component);
+}
+#endif
+
 void SGASEditorWidget::ValidateSelections()
 {
 	if (SelectedWorldContextHandle.IsNone())
@@ -328,46 +577,16 @@ void SGASEditorWidget::ValidateSelections()
 		if (const UWorld* World = WorldContext->World())
 		{
 			UpdateComponentsList(World);
+
+			if (bTrackSelection)
+			{
+				return;
+			}
+
 			if (!SelectedComponent.IsValid() ||
 				!AbilitySystemComponents.Contains(SelectedComponent))
 			{
-				for (const TWeakObjectPtr<UAbilitySystemComponent>& WeakComponent : AbilitySystemComponents)
-				{
-					UAbilitySystemComponent* Component = WeakComponent.Get();
-					if (!Component)
-					{
-						continue;
-					}
-
-					if (const APawn* Character = Cast<APawn>(Component->GetOwnerActor()))
-					{
-						if (Character->IsLocallyControlled())
-						{
-							OnChangeSelectedActor(Component);
-							return;
-						}
-					}
-
-					if (const APlayerController* Controller = Cast<APlayerController>(Component->GetOwnerActor()))
-					{
-						if (Controller->IsLocalController())
-						{
-							OnChangeSelectedActor(Component);
-							return;
-						}
-					}
-
-					if (const APlayerState* PlayerState = Cast<APlayerState>(Component->GetOwnerActor()))
-					{
-						if (PlayerState->GetPlayerController() &&
-							PlayerState->GetPlayerController()->IsLocalController())
-						{
-							OnChangeSelectedActor(Component);
-							return;
-						}
-					}
-				}
-				OnChangeSelectedActor({});
+				SelectLocallyControlledComponent();
 			}
 			return;
 		}
@@ -377,14 +596,35 @@ void SGASEditorWidget::ValidateSelections()
 	OnChangeSelectedActor({});
 }
 
-FReply SGASEditorWidget::Refresh() const
+void SGASEditorWidget::ClearSelection()
+{
+	bSelectionStopped = false;
+	SelectedComponent = nullptr;
+	SelectedComponentTitle = LOCTEXT("None", "None");
+
+	AbilitiesTab->Refresh(nullptr);
+	AttributesTab->Refresh(nullptr);
+	GameplayEffectsTab->Refresh(nullptr, SelectedWorldContextHandle);
+	GameplayTagsTab->Refresh(nullptr);
+}
+
+void SGASEditorWidget::Refresh()
 {
 	UAbilitySystemComponent* Component = SelectedComponent.Get();
+	if (!Component)
+	{
+		return;
+	}
 
 	AbilitiesTab->Refresh(Component);
 	AttributesTab->Refresh(Component);
 	GameplayEffectsTab->Refresh(Component, SelectedWorldContextHandle);
 	GameplayTagsTab->Refresh(Component);
+}
+
+FReply SGASEditorWidget::HandleRefreshClicked()
+{
+	Refresh();
 
 	return FReply::Handled();
 }
@@ -476,42 +716,13 @@ void SGASEditorWidget::OnChangeWorldType(const FName WorldContextHandle)
 	const UAbilitySystemComponent* CurrentComponent = SelectedComponent.Get();
 	if (!CurrentComponent)
 	{
-		for (const TWeakObjectPtr<UAbilitySystemComponent>& WeakComponent : AbilitySystemComponents)
-		{
-			UAbilitySystemComponent* Component = WeakComponent.Get();
-			if (!Component)
-			{
-				continue;
-			}
+		SelectLocallyControlledComponent();
+		return;
+	}
 
-			if (const APawn* Character = Cast<APawn>(Component->GetOwnerActor()))
-			{
-				if (Character->IsLocallyControlled())
-				{
-					OnChangeSelectedActor(Component);
-					return;
-				}
-			}
-
-			if (const APlayerController* Controller = Cast<APlayerController>(Component->GetOwnerActor()))
-			{
-				if (Controller->IsLocalController())
-				{
-					OnChangeSelectedActor(Component);
-					return;
-				}
-			}
-
-			if (const APlayerState* PlayerState = Cast<APlayerState>(Component->GetOwnerActor()))
-			{
-				if (PlayerState->GetPlayerController() &&
-					PlayerState->GetPlayerController()->IsLocalController())
-				{
-					OnChangeSelectedActor(Component);
-					return;
-				}
-			}
-		}
+	const AActor* CurrentOwner = CurrentComponent->GetOwnerActor();
+	if (!CurrentOwner)
+	{
 		OnChangeSelectedActor({});
 		return;
 	}
@@ -524,7 +735,9 @@ void SGASEditorWidget::OnChangeWorldType(const FName WorldContextHandle)
 			continue;
 		}
 
-		if (Component->GetOwnerActor()->GetFName() == CurrentComponent->GetOwnerActor()->GetFName())
+		const AActor* Owner = Component->GetOwnerActor();
+		if (Owner &&
+			Owner->GetFName() == CurrentOwner->GetFName())
 		{
 			OnChangeSelectedActor(Component);
 			return;
@@ -562,11 +775,21 @@ void SGASEditorWidget::OnChangeSelectedActor(TWeakObjectPtr<UAbilitySystemCompon
 	UAbilitySystemComponent* Component = WeakComponent.Get();
 	if (!Component)
 	{
+		if (SelectedComponent.IsValid())
+		{
+			bSelectionStopped = true;
+			SelectedComponentTitle = FText::Format(LOCTEXT("ComponentStoppedFormat", "{0} (stopped)"), SelectedComponentTitle);
+		}
+		else if (!bSelectionStopped)
+		{
+			SelectedComponentTitle = LOCTEXT("None", "None");
+		}
+
 		SelectedComponent = nullptr;
-		SelectedComponentTitle = LOCTEXT("None", "None");
 		return;
 	}
 
+	bSelectionStopped = false;
 	SelectedComponent = Component;
 	SelectedComponentTitle = GetComponentName(Component);
 
@@ -599,7 +822,7 @@ FText SGASEditorWidget::GetComponentName(const UAbilitySystemComponent* Componen
 	{
 		switch (Role)
 		{
-		default: return INVTEXT("");
+		default: return FText::GetEmpty();
 		case ROLE_SimulatedProxy: return LOCTEXT("SimulatedProxy", "Simulated Proxy");
 		case ROLE_AutonomousProxy: return LOCTEXT("AutonomousProxy", "Autonomous Proxy");
 		case ROLE_Authority: return LOCTEXT("Authority", "Authority");
@@ -616,7 +839,7 @@ FText SGASEditorWidget::GetComponentName(const UAbilitySystemComponent* Componen
 
 	const AActor* Target = Avatar ? Avatar : Owner;
 
-	const FText Name = FText::FromString(Target->GetName());
+	const FText Name = FText::FromString(Target->GetActorNameOrLabel());
 
 	// We don't want to show local roles for standalone worlds
 	if (Component->GetWorld()->GetNetMode() == NM_Standalone)
@@ -625,7 +848,7 @@ FText SGASEditorWidget::GetComponentName(const UAbilitySystemComponent* Componen
 	}
 
 	const FText Role = GetLocalRoleText(Target->GetLocalRole());
-	return FText::Format(INVTEXT("{0} [{1}]"), Name, Role);
+	return FText::Format(LOCTEXT("ComponentNameWithRoleFormat", "{0} [{1}]"), Name, Role);
 }
 
 FText SGASEditorWidget::GetWorldInstanceName(const FName WorldContextHandle) const
